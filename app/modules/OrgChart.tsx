@@ -54,13 +54,13 @@ const V_GAP = 96;
 type DeptHexColor = { bar: string; barText: string; cardBg: string; cardBorder: string };
 
 const DEPT_HEX_COLORS: Record<string, DeptHexColor> = {
-  Executive: { bar: "#92400e", barText: "#ffffff", cardBg: "#fffbeb", cardBorder: "#f59e0b" },
-  Finance: { bar: "#065f46", barText: "#ffffff", cardBg: "#ecfdf5", cardBorder: "#10b981" },
-  Operation: { bar: "#1e40af", barText: "#ffffff", cardBg: "#eff6ff", cardBorder: "#3b82f6" },
-  HR: { bar: "#6b21a8", barText: "#ffffff", cardBg: "#faf5ff", cardBorder: "#a855f7" },
-  "Call Center": { bar: "#9f1239", barText: "#ffffff", cardBg: "#fff1f2", cardBorder: "#f43f5e" },
-  Sales: { bar: "#155e75", barText: "#ffffff", cardBg: "#ecfeff", cardBorder: "#06b6d4" },
-  Contingencies: { bar: "#86198f", barText: "#ffffff", cardBg: "#fdf4ff", cardBorder: "#d946ef" },
+  Executive: { bar: "#92400e", barText: "#ffffff", cardBg: "#fef3c7", cardBorder: "#f59e0b" },
+  Finance: { bar: "#065f46", barText: "#ffffff", cardBg: "#d1fae5", cardBorder: "#10b981" },
+  Operation: { bar: "#1e40af", barText: "#ffffff", cardBg: "#dbeafe", cardBorder: "#3b82f6" },
+  HR: { bar: "#6b21a8", barText: "#ffffff", cardBg: "#ede9fe", cardBorder: "#a855f7" },
+  "Call Center": { bar: "#9f1239", barText: "#ffffff", cardBg: "#ffe4e6", cardBorder: "#f43f5e" },
+  Sales: { bar: "#155e75", barText: "#ffffff", cardBg: "#cffafe", cardBorder: "#06b6d4" },
+  Contingencies: { bar: "#86198f", barText: "#ffffff", cardBg: "#fae8ff", cardBorder: "#d946ef" },
 };
 const DEFAULT_DEPT_HEX: DeptHexColor = { bar: "#475569", barText: "#ffffff", cardBg: "#f8fafc", cardBorder: "#94a3b8" };
 
@@ -109,7 +109,7 @@ function deriveDeptColorFromHex(hex: string): DeptHexColor {
   const b = parseInt(hex.slice(5, 7), 16);
   const darken = (v: number) => Math.round(v * 0.65);
   const bar = `#${darken(r).toString(16).padStart(2, "0")}${darken(g).toString(16).padStart(2, "0")}${darken(b).toString(16).padStart(2, "0")}`;
-  const tint = (v: number) => Math.round(255 - (255 - v) * 0.08);
+  const tint = (v: number) => Math.round(255 - (255 - v) * 0.20);
   const cardBg = `#${tint(r).toString(16).padStart(2, "0")}${tint(g).toString(16).padStart(2, "0")}${tint(b).toString(16).padStart(2, "0")}`;
   return { bar, barText: "#ffffff", cardBg, cardBorder: hex };
 }
@@ -1518,10 +1518,10 @@ export default function OrgChart() {
                     `}
                     style={{
                       backgroundColor: dc.cardBg,
+                      borderTop: `1px solid ${dc.cardBorder}66`,
+                      borderRight: `1px solid ${dc.cardBorder}66`,
+                      borderBottom: `1px solid ${dc.cardBorder}66`,
                       borderLeft: `${ds.borderWidth}px solid ${dc.cardBorder}`,
-                      border: `1px solid ${dc.cardBorder}33`,
-                      borderLeftWidth: ds.borderWidth,
-                      borderLeftColor: dc.cardBorder,
                       boxShadow: ds.shadow,
                     }}
                     onClick={() => setEditEmp({ ...emp })}
