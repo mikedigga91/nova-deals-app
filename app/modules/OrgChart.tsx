@@ -50,35 +50,68 @@ const CARD_H = 164;
 const H_GAP = 48;
 const V_GAP = 96;
 
-/* Role-based colors */
-const ROLE_COLORS: Record<string, { bar: string; barText: string; accent: string }> = {
-  president: { bar: "#1e3a5f", barText: "#ffffff", accent: "#1e3a5f" },
-  vp: { bar: "#00aeef", barText: "#ffffff", accent: "#00aeef" },
-  manager: { bar: "#b5b821", barText: "#ffffff", accent: "#b5b821" },
-  default: { bar: "#6b7280", barText: "#ffffff", accent: "#6b7280" },
-};
+/* Department hex colors for card styling */
+type DeptHexColor = { bar: string; barText: string; cardBg: string; cardBorder: string };
 
-const DEPT_COLORS: Record<string, { gradient: string; border: string; badge: string; badgeText: string }> = {
-  Executive: { gradient: "from-amber-50 to-orange-50", border: "border-amber-200", badge: "bg-amber-100", badgeText: "text-amber-700" },
-  Finance: { gradient: "from-emerald-50 to-green-50", border: "border-emerald-200", badge: "bg-emerald-100", badgeText: "text-emerald-700" },
-  Operation: { gradient: "from-blue-50 to-sky-50", border: "border-blue-200", badge: "bg-blue-100", badgeText: "text-blue-700" },
-  HR: { gradient: "from-purple-50 to-violet-50", border: "border-purple-200", badge: "bg-purple-100", badgeText: "text-purple-700" },
-  "Call Center": { gradient: "from-rose-50 to-pink-50", border: "border-rose-200", badge: "bg-rose-100", badgeText: "text-rose-700" },
-  Sales: { gradient: "from-cyan-50 to-teal-50", border: "border-cyan-200", badge: "bg-cyan-100", badgeText: "text-cyan-700" },
-  Contingencies: { gradient: "from-fuchsia-50 to-pink-50", border: "border-fuchsia-200", badge: "bg-fuchsia-100", badgeText: "text-fuchsia-700" },
+const DEPT_HEX_COLORS: Record<string, DeptHexColor> = {
+  Executive: { bar: "#92400e", barText: "#ffffff", cardBg: "#fffbeb", cardBorder: "#f59e0b" },
+  Finance: { bar: "#065f46", barText: "#ffffff", cardBg: "#ecfdf5", cardBorder: "#10b981" },
+  Operation: { bar: "#1e40af", barText: "#ffffff", cardBg: "#eff6ff", cardBorder: "#3b82f6" },
+  HR: { bar: "#6b21a8", barText: "#ffffff", cardBg: "#faf5ff", cardBorder: "#a855f7" },
+  "Call Center": { bar: "#9f1239", barText: "#ffffff", cardBg: "#fff1f2", cardBorder: "#f43f5e" },
+  Sales: { bar: "#155e75", barText: "#ffffff", cardBg: "#ecfeff", cardBorder: "#06b6d4" },
+  Contingencies: { bar: "#86198f", barText: "#ffffff", cardBg: "#fdf4ff", cardBorder: "#d946ef" },
 };
+const DEFAULT_DEPT_HEX: DeptHexColor = { bar: "#475569", barText: "#ffffff", cardBg: "#f8fafc", cardBorder: "#94a3b8" };
 
-const DEFAULT_DEPT_COLOR = { gradient: "from-slate-50 to-slate-100", border: "border-slate-200", badge: "bg-slate-100", badgeText: "text-slate-600" };
+/* Tailwind-based badge colors for dept tabs (kept for tab styling) */
+const DEPT_COLORS: Record<string, { badge: string; badgeText: string }> = {
+  Executive: { badge: "bg-amber-100", badgeText: "text-amber-700" },
+  Finance: { badge: "bg-emerald-100", badgeText: "text-emerald-700" },
+  Operation: { badge: "bg-blue-100", badgeText: "text-blue-700" },
+  HR: { badge: "bg-purple-100", badgeText: "text-purple-700" },
+  "Call Center": { badge: "bg-rose-100", badgeText: "text-rose-700" },
+  Sales: { badge: "bg-cyan-100", badgeText: "text-cyan-700" },
+  Contingencies: { badge: "bg-fuchsia-100", badgeText: "text-fuchsia-700" },
+};
+const DEFAULT_DEPT_COLOR = { badge: "bg-slate-100", badgeText: "text-slate-600" };
 const getDeptColor = (dept: string) => DEPT_COLORS[dept] || DEFAULT_DEPT_COLOR;
 
-function getRoleColor(position: string, depth: number) {
-  const p = (position || "").toLowerCase();
-  if (depth === 0 || p.includes("president") || p.includes("ceo") || p.includes("director")) return ROLE_COLORS.president;
-  if (p.includes("vp") || p.includes("vice president") || p.includes("head")) return ROLE_COLORS.vp;
-  if (p.includes("manager") || p.includes("lead") || p.includes("supervisor")) return ROLE_COLORS.manager;
-  if (depth === 1) return ROLE_COLORS.vp;
-  if (depth >= 2) return ROLE_COLORS.manager;
-  return ROLE_COLORS.default;
+/* Depth-based visual intensity */
+function getDepthStyle(depth: number): { shadow: string; borderWidth: number } {
+  if (depth === 0) return { shadow: "0 4px 24px rgba(0,0,0,0.10), 0 2px 8px rgba(0,0,0,0.06)", borderWidth: 5 };
+  if (depth === 1) return { shadow: "0 3px 16px rgba(0,0,0,0.08), 0 1px 6px rgba(0,0,0,0.05)", borderWidth: 4 };
+  if (depth === 2) return { shadow: "0 2px 10px rgba(0,0,0,0.06), 0 1px 4px rgba(0,0,0,0.04)", borderWidth: 3 };
+  return { shadow: "0 1px 6px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.03)", borderWidth: 3 };
+}
+
+/* Color palette for custom department colors */
+const COLOR_PALETTE = [
+  { name: "Amber", hex: "#f59e0b" },
+  { name: "Orange", hex: "#f97316" },
+  { name: "Rose", hex: "#f43f5e" },
+  { name: "Pink", hex: "#ec4899" },
+  { name: "Fuchsia", hex: "#d946ef" },
+  { name: "Purple", hex: "#a855f7" },
+  { name: "Blue", hex: "#3b82f6" },
+  { name: "Sky", hex: "#0ea5e9" },
+  { name: "Cyan", hex: "#06b6d4" },
+  { name: "Teal", hex: "#14b8a6" },
+  { name: "Emerald", hex: "#10b981" },
+  { name: "Lime", hex: "#84cc16" },
+  { name: "Slate", hex: "#64748b" },
+  { name: "Stone", hex: "#78716c" },
+];
+
+function deriveDeptColorFromHex(hex: string): DeptHexColor {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  const darken = (v: number) => Math.round(v * 0.65);
+  const bar = `#${darken(r).toString(16).padStart(2, "0")}${darken(g).toString(16).padStart(2, "0")}${darken(b).toString(16).padStart(2, "0")}`;
+  const tint = (v: number) => Math.round(255 - (255 - v) * 0.08);
+  const cardBg = `#${tint(r).toString(16).padStart(2, "0")}${tint(g).toString(16).padStart(2, "0")}${tint(b).toString(16).padStart(2, "0")}`;
+  return { bar, barText: "#ffffff", cardBg, cardBorder: hex };
 }
 
 /* Default departments + roles */
@@ -96,6 +129,7 @@ const DEFAULT_ROLES_BY_DEPT: Record<string, string[]> = {
 /* Local storage keys (fallback persistence) */
 const LS_DEPT_ORDER = "orgchart_dept_order_v1";
 const LS_ROLES_BY_DEPT = "orgchart_roles_by_dept_v1";
+const LS_CUSTOM_COLORS = "orgchart_dept_colors_v1";
 
 /* Optional Supabase tables */
 const TABLE_DEPTS = "org_departments";
@@ -138,8 +172,11 @@ function getInitials(name: string): string {
 function getAncestorIds(empId: string, employees: Employee[]): string[] {
   const empMap = new Map(employees.map(e => [e.id, e]));
   const ids: string[] = [];
+  const visited = new Set<string>();
   let current = empMap.get(empId);
   while (current?.manager_id) {
+    if (visited.has(current.manager_id)) break;
+    visited.add(current.manager_id);
     ids.push(current.manager_id);
     current = empMap.get(current.manager_id);
   }
@@ -236,8 +273,11 @@ function buildTree(employees: Employee[], collapsedSet: Set<string>, filterDept:
     const empMap = new Map(active.map(e => [e.id, e]));
     for (const emp of active) {
       if (emp.department === filterDept) {
+        const visited = new Set<string>();
         let current: Employee | undefined = emp;
         while (current) {
+          if (visited.has(current.id)) break;
+          visited.add(current.id);
           includedIds.add(current.id);
           current = current.manager_id ? empMap.get(current.manager_id) : undefined;
         }
@@ -352,6 +392,21 @@ export default function OrgChart() {
   const [deptAddValue, setDeptAddValue] = useState("");
   const [roleInput, setRoleInput] = useState<Record<string, string>>({});
 
+  /* Custom department colors (persisted to localStorage) */
+  const [customDeptColors, setCustomDeptColors] = useState<Record<string, string>>(() => {
+    try {
+      const saved = localStorage.getItem(LS_CUSTOM_COLORS);
+      if (saved) { const parsed = JSON.parse(saved); if (parsed && typeof parsed === "object") return parsed; }
+    } catch { /* ignore */ }
+    return {};
+  });
+
+  const getCardColor = useCallback((dept: string): DeptHexColor => {
+    const custom = customDeptColors[dept];
+    if (custom) return deriveDeptColorFromHex(custom);
+    return DEPT_HEX_COLORS[dept] || DEFAULT_DEPT_HEX;
+  }, [customDeptColors]);
+
   /* Card drag/drop for ordering and re-parenting */
   const cardDragRef = useRef<{ id: string } | null>(null);
   const [dragOverTarget, setDragOverTarget] = useState<{ id: string; zone: "left" | "right" | "child" } | null>(null);
@@ -437,6 +492,10 @@ export default function OrgChart() {
   useEffect(() => {
     try { localStorage.setItem(LS_ROLES_BY_DEPT, JSON.stringify(rolesByDept)); } catch { /* ignore */ }
   }, [rolesByDept]);
+
+  useEffect(() => {
+    try { localStorage.setItem(LS_CUSTOM_COLORS, JSON.stringify(customDeptColors)); } catch { /* ignore */ }
+  }, [customDeptColors]);
 
   /* ── Layout ── */
   const { nodes, width: treeWidth, height: treeHeight } = useMemo(
@@ -998,25 +1057,30 @@ export default function OrgChart() {
 
     for (const node of nodes) {
       const { x, y, employee: emp, depth } = node;
-      const rc = getRoleColor(emp.position, depth);
+      const dc = getCardColor(emp.department);
+      const ds = getDepthStyle(depth);
 
       ctx.fillStyle = "rgba(0,0,0,0.06)";
       roundRect(ctx, x + 2, y + 2, CARD_W, CARD_H, 8);
       ctx.fill();
 
-      ctx.fillStyle = "#ffffff";
-      ctx.strokeStyle = "#d1d5db";
+      ctx.fillStyle = dc.cardBg;
+      ctx.strokeStyle = dc.cardBorder;
       ctx.lineWidth = 1;
       roundRect(ctx, x, y, CARD_W, CARD_H, 8);
       ctx.fill();
       ctx.stroke();
 
-      ctx.fillStyle = rc.bar;
+      // Left accent border
+      ctx.fillStyle = dc.cardBorder;
+      ctx.fillRect(x, y + 8, ds.borderWidth, CARD_H - 16);
+
+      ctx.fillStyle = dc.bar;
       roundRect(ctx, x, y, CARD_W, 30, 8);
       ctx.fill();
       ctx.fillRect(x, y + 20, CARD_W, 10);
 
-      ctx.fillStyle = rc.barText;
+      ctx.fillStyle = dc.barText;
       ctx.font = "bold 12px system-ui, sans-serif";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
@@ -1167,7 +1231,8 @@ export default function OrgChart() {
 
             <div className="flex items-center gap-1.5 flex-wrap">
               {deptOrder.map(dept => {
-                const dc = getDeptColor(dept);
+                const deptBadge = getDeptColor(dept);
+                const deptHex = getCardColor(dept);
                 const active = filterDept === dept;
 
                 return (
@@ -1183,9 +1248,11 @@ export default function OrgChart() {
                     <button
                       onClick={() => selectDept(active ? null : dept)}
                       className={`px-3.5 py-1.5 rounded-full text-[11px] font-semibold transition-all border ${
-                        active ? `${dc.badge} ${dc.badgeText} shadow-sm border-transparent` : "bg-slate-100 text-slate-500 hover:bg-slate-200 border-slate-200"
+                        active ? "shadow-sm border-transparent" : "bg-slate-100 text-slate-500 hover:bg-slate-200 border-slate-200"
                       }`}
+                      style={active ? { backgroundColor: deptHex.cardBg, color: deptHex.bar, borderColor: deptHex.cardBorder + "66" } : undefined}
                     >
+                      <span className="inline-block w-2 h-2 rounded-full mr-1.5" style={{ backgroundColor: deptHex.cardBorder }} />
                       {dept}
                     </button>
 
@@ -1224,7 +1291,7 @@ export default function OrgChart() {
             </div>
           </div>
 
-          {/* Roles panel with Input Area */}
+          {/* Roles panel with Input Area + Color Picker */}
           {activeDept && (
             <div className="mt-3 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">
               <div className="flex items-center justify-between gap-3">
@@ -1269,6 +1336,40 @@ export default function OrgChart() {
                     </div>
                   ))
                 )}
+              </div>
+
+              {/* Color Picker */}
+              <div className="mt-2.5 pt-2.5 border-t border-slate-200">
+                <div className="flex items-center gap-3">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Color</span>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {COLOR_PALETTE.map(c => {
+                      const isSelected = customDeptColors[activeDept] === c.hex
+                        || (!customDeptColors[activeDept] && DEPT_HEX_COLORS[activeDept]?.cardBorder === c.hex);
+                      return (
+                        <button
+                          key={c.hex}
+                          className={`w-6 h-6 rounded-full transition-all duration-150 ${isSelected ? "ring-2 ring-offset-2 ring-slate-400 scale-110" : "hover:scale-110"}`}
+                          style={{ backgroundColor: c.hex }}
+                          title={c.name}
+                          onClick={() => setCustomDeptColors(prev => ({ ...prev, [activeDept]: c.hex }))}
+                        />
+                      );
+                    })}
+                  </div>
+                  {customDeptColors[activeDept] && (
+                    <button
+                      className="text-[10px] font-semibold text-slate-400 hover:text-slate-600 transition-colors px-2 py-1 rounded-md hover:bg-white"
+                      onClick={() => setCustomDeptColors(prev => {
+                        const next = { ...prev };
+                        delete next[activeDept];
+                        return next;
+                      })}
+                    >
+                      Reset
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -1348,7 +1449,8 @@ export default function OrgChart() {
             {/* Cards */}
             {nodes.map(node => {
               const emp = node.employee;
-              const rc = getRoleColor(emp.position, node.depth);
+              const dc = getCardColor(emp.department);
+              const ds = getDepthStyle(node.depth);
               const isHighlighted = emp.id === highlightId;
               const isCollapsed = collapsedSet.has(emp.id);
               const expandable = hasChildren(emp.id);
@@ -1409,20 +1511,24 @@ export default function OrgChart() {
                   {/* ── Card visual ── */}
                   <div
                     className={`
-                      w-full h-full rounded-xl overflow-hidden bg-white
-                      border border-slate-200/80
-                      shadow-[0_1px_3px_rgba(0,0,0,0.06),0_1px_2px_rgba(0,0,0,0.04)]
-                      group-hover:shadow-[0_10px_32px_rgba(0,0,0,0.12),0_4px_12px_rgba(0,0,0,0.08)]
+                      w-full h-full rounded-xl overflow-hidden
                       transition-all duration-200
                       ${isHighlighted ? "ring-2 ring-blue-500 ring-offset-2" : ""}
                       ${isDropChild ? "ring-2 ring-blue-400 ring-offset-1" : ""}
                     `}
-                    style={{ borderLeft: `4px solid ${rc.bar}` }}
+                    style={{
+                      backgroundColor: dc.cardBg,
+                      borderLeft: `${ds.borderWidth}px solid ${dc.cardBorder}`,
+                      border: `1px solid ${dc.cardBorder}33`,
+                      borderLeftWidth: ds.borderWidth,
+                      borderLeftColor: dc.cardBorder,
+                      boxShadow: ds.shadow,
+                    }}
                     onClick={() => setEditEmp({ ...emp })}
                   >
                     {/* Title bar */}
-                    <div className="px-3 py-2 flex items-center justify-between" style={{ backgroundColor: rc.bar }}>
-                      <span className="text-[11px] font-bold tracking-wide" style={{ color: rc.barText }}>
+                    <div className="px-3 py-2 flex items-center justify-between" style={{ backgroundColor: dc.bar }}>
+                      <span className="text-[11px] font-bold tracking-wide" style={{ color: dc.barText }}>
                         {emp.position || emp.department || "Employee"}
                       </span>
                       {linkedEmployeeIds.has(emp.id) && (
@@ -1480,6 +1586,8 @@ export default function OrgChart() {
 
                   {/* Add sibling — right edge */}
                   <button
+                    draggable={false}
+                    onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); }}
                     className="absolute -right-3.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-white border-2 border-slate-200
                       flex items-center justify-center text-slate-400
                       hover:bg-blue-50 hover:border-blue-300 hover:text-blue-600
@@ -1495,6 +1603,8 @@ export default function OrgChart() {
 
                   {/* Add child — bottom center */}
                   <button
+                    draggable={false}
+                    onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); }}
                     className="absolute -bottom-3.5 left-1/2 -translate-x-1/2 w-7 h-7 rounded-full bg-white border-2 border-slate-200
                       flex items-center justify-center text-slate-400
                       hover:bg-blue-50 hover:border-blue-300 hover:text-blue-600
@@ -1511,6 +1621,8 @@ export default function OrgChart() {
                   {/* Expand / Collapse — bottom right */}
                   {expandable && (
                     <button
+                      draggable={false}
+                      onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); }}
                       className="absolute -bottom-3.5 right-4 w-7 h-7 rounded-full bg-white border-2 border-slate-200
                         flex items-center justify-center text-slate-400
                         hover:bg-slate-100 hover:border-slate-400 hover:text-slate-700
@@ -1529,6 +1641,8 @@ export default function OrgChart() {
 
                   {/* Quick delete — top right */}
                   <button
+                    draggable={false}
+                    onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); }}
                     className="absolute top-2 right-2 w-6 h-6 rounded-lg bg-white/80 backdrop-blur border border-slate-200
                       flex items-center justify-center text-slate-400
                       hover:text-red-500 hover:border-red-200 hover:bg-red-50
