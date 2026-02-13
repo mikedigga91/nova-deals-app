@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Sales from "./modules/Sales";
 import Speed from "./modules/Speed";
 import SPPDashboard from "./modules/SPPDashboard";
@@ -13,6 +13,8 @@ import Payroll from "./modules/Payroll";
 import OrgChart from "./modules/OrgChart";
 import { useAuth } from "@/lib/useAuth";
 import LoginPage from "./LoginPage";
+import ChangePasswordPage from "./ChangePasswordPage";
+import { supabase } from "@/lib/supabaseClient";
 
 type MenuKey = "sales" | "speed" | "spp" | "cc_commissions" | "payfile" | "advances" | "user_management" | "cc_payroll" | "org_chart";
 
@@ -34,6 +36,21 @@ export default function FidelioShellPage() {
   const { user, loading, signOut } = useAuth();
   const [active, setActive] = useState<MenuKey>("spp");
   const [collapsed, setCollapsed] = useState(false);
+  const [mustChangePassword, setMustChangePassword] = useState<boolean | null>(null);
+  const [portalUserId, setPortalUserId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!user?.email) { setMustChangePassword(null); return; }
+    supabase
+      .from("portal_users")
+      .select("id, must_change_password")
+      .eq("email", user.email)
+      .single()
+      .then(({ data }) => {
+        setMustChangePassword(data?.must_change_password ?? false);
+        setPortalUserId(data?.id ?? null);
+      });
+  }, [user?.email]);
 
   const grouped = useMemo(() => {
     const m = new Map<string, MenuItem[]>();
@@ -56,6 +73,16 @@ export default function FidelioShellPage() {
 
   if (!user) {
     return <LoginPage />;
+  }
+
+  if (mustChangePassword === true && portalUserId) {
+    return (
+      <ChangePasswordPage
+        userEmail={user.email ?? ""}
+        portalUserId={portalUserId}
+        onPasswordChanged={() => setMustChangePassword(false)}
+      />
+    );
   }
 
   return (

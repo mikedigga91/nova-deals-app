@@ -191,6 +191,23 @@ function getInitials(name: string): string {
     .toUpperCase();
 }
 
+async function adminAuthAction(action: string, payload: Record<string, any>) {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) return; // silently skip if not authenticated
+  try {
+    await fetch("/api/admin/auth", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({ action, ...payload }),
+    });
+  } catch {
+    // Fire-and-forget — don't block OrgChart operations
+  }
+}
+
 function getAncestorIds(empId: string, employees: Employee[]): string[] {
   const empMap = new Map(employees.map(e => [e.id, e]));
   const ids: string[] = [];
@@ -826,16 +843,28 @@ export default function OrgChart() {
       const oldEmp = employees.find(e => e.id === editEmp.id);
       if (oldEmp && oldEmp.is_active !== editEmp.is_active) {
         if (!editEmp.is_active) {
-          // Deactivating employee → deactivate linked portal user
-          await supabase.from("portal_users")
+          // Deactivating employee → deactivate linked portal user + ban auth
+          const { data: deactivatedPU } = await supabase.from("portal_users")
             .update({ is_active: false, deactivation_source: "orgchart_deactivated" })
-            .eq("linked_employee_id", editEmp.id);
+            .eq("linked_employee_id", editEmp.id)
+            .select("id, auth_uid");
+          if (deactivatedPU) {
+            for (const pu of deactivatedPU) {
+              if (pu.auth_uid) adminAuthAction("ban", { portal_user_id: pu.id });
+            }
+          }
         } else {
-          // Reactivating employee → reactivate portal user ONLY if deactivation was org-chart-triggered
-          await supabase.from("portal_users")
+          // Reactivating employee → reactivate portal user + unban auth
+          const { data: reactivatedPU } = await supabase.from("portal_users")
             .update({ is_active: true, deactivation_source: null })
             .eq("linked_employee_id", editEmp.id)
-            .eq("deactivation_source", "orgchart_deactivated");
+            .eq("deactivation_source", "orgchart_deactivated")
+            .select("id, auth_uid");
+          if (reactivatedPU) {
+            for (const pu of reactivatedPU) {
+              if (pu.auth_uid) adminAuthAction("unban", { portal_user_id: pu.id });
+            }
+          }
         }
       }
     } else {
@@ -886,9 +915,15 @@ export default function OrgChart() {
       return;
     }
     // Deactivate linked portal user BEFORE deleting (ON DELETE SET NULL clears the FK after)
-    await supabase.from("portal_users")
+    const { data: removedPU } = await supabase.from("portal_users")
       .update({ is_active: false, deactivation_source: "orgchart_removed" })
-      .eq("linked_employee_id", id);
+      .eq("linked_employee_id", id)
+      .select("id, auth_uid");
+    if (removedPU) {
+      for (const pu of removedPU) {
+        if (pu.auth_uid) adminAuthAction("ban", { portal_user_id: pu.id });
+      }
+    }
 
     await supabase.from("employees").delete().eq("id", id);
 

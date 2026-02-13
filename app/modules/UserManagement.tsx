@@ -25,6 +25,8 @@ type PortalUser = {
   last_login: string | null;
   linked_employee_id: string | null;
   deactivation_source: string | null;
+  auth_uid: string | null;
+  must_change_password: boolean;
 };
 
 type OrgEmployee = {
@@ -46,13 +48,15 @@ const ALL_MODULES: { key: string; label: string; group: string }[] = [
   { key: "cc_commissions", label: "CC Commissions Overview", group: "Dashboards" },
   { key: "payfile", label: "Pay File Generation", group: "Finance" },
   { key: "advances", label: "Advances", group: "Finance" },
+  { key: "cc_payroll", label: "Payroll", group: "Finance" },
   { key: "user_management", label: "User Management", group: "Admin" },
+  { key: "org_chart", label: "Org Chart", group: "Admin" },
 ];
 
 const DATA_SCOPES: { value: string; label: string; desc: string }[] = [
   { value: "all", label: "All Data", desc: "Can see all records across all reps and companies" },
   { value: "own", label: "Own Data Only", desc: "Can only see records matching their linked name" },
-  { value: "team", label: "Team Data", desc: "Can see records for their assigned team (future)" },
+  { value: "team", label: "Team Data", desc: "Can see own records + direct reports' records (org chart)" },
   { value: "none", label: "No Data", desc: "Cannot see any data unless explicitly overridden" },
 ];
 
@@ -63,6 +67,22 @@ const scopeColor = (s: string) =>
   s === "own" ? "bg-blue-100 text-blue-700" :
   s === "team" ? "bg-purple-100 text-purple-700" :
   "bg-slate-100 text-slate-500";
+
+async function adminAuthAction(action: string, payload: Record<string, any>) {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) throw new Error("Not authenticated");
+  const res = await fetch("/api/admin/auth", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${session.access_token}`,
+    },
+    body: JSON.stringify({ action, ...payload }),
+  });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error || "Admin auth action failed");
+  return json;
+}
 
 /* ═══════════════════ MAIN COMPONENT ═══════════════════ */
 
@@ -112,6 +132,7 @@ function UsersTab() {
   const [editUser, setEditUser] = useState<PortalUser | null>(null);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const [newUserPassword, setNewUserPassword] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -142,6 +163,7 @@ function UsersTab() {
     email: "", display_name: "", role_id: null, linked_name: null,
     module_overrides: null, data_scope_override: null, is_active: true, last_login: null,
     linked_employee_id: null, deactivation_source: null,
+    auth_uid: null, must_change_password: false,
   };
 
   const getRoleForUser = (u: PortalUser): Role | undefined => roles.find(r => r.id === u.role_id);
@@ -178,18 +200,65 @@ function UsersTab() {
       deactivation_source: deactivationSource,
     };
     if (editUser.id) {
+      // Updating existing user
       const { error } = await supabase.from("portal_users").update(payload).eq("id", editUser.id);
       if (error) { setMsg(`Error: ${error.message}`); setSaving(false); return; }
+
+      // Detect is_active toggle → ban/unban
+      const original = users.find(u => u.id === editUser.id);
+      if (original && original.is_active !== editUser.is_active) {
+        try {
+          if (!editUser.is_active) {
+            await adminAuthAction("ban", { portal_user_id: editUser.id });
+          } else {
+            await adminAuthAction("unban", { portal_user_id: editUser.id });
+          }
+        } catch {
+          // Non-blocking — user may not have auth account
+        }
+      }
     } else {
-      const { error } = await supabase.from("portal_users").insert(payload);
+      // Creating new user — get back the ID
+      const { data: inserted, error } = await supabase.from("portal_users").insert(payload).select("id").single();
       if (error) { setMsg(`Error: ${error.message}`); setSaving(false); return; }
+
+      // Create auth account if password was provided
+      if (inserted && newUserPassword) {
+        try {
+          await adminAuthAction("create", {
+            portal_user_id: inserted.id,
+            email: editUser.email,
+            password: newUserPassword,
+          });
+        } catch (e: any) {
+          setMsg(`User created but auth account failed: ${e.message}`);
+          setNewUserPassword("");
+          setSaving(false);
+          load();
+          return;
+        }
+      }
     }
+    setNewUserPassword("");
     setEditUser(null); setSaving(false); load();
   }
 
   async function deleteUser(id: string) {
     await supabase.from("portal_users").delete().eq("id", id);
     setEditUser(null); load();
+  }
+
+  async function resetPassword(portalUserId: string) {
+    const tempPw = prompt("Enter new temporary password (min 8 characters):");
+    if (!tempPw) return;
+    if (tempPw.length < 8) { setMsg("Password must be at least 8 characters."); return; }
+    try {
+      await adminAuthAction("reset-password", { portal_user_id: portalUserId, password: tempPw });
+      setMsg("Password reset successfully. User will be prompted to change it on next login.");
+      load();
+    } catch (e: any) {
+      setMsg(`Reset failed: ${e.message}`);
+    }
   }
 
   const su = (k: keyof PortalUser, v: any) => setEditUser(p => p ? { ...p, [k]: v } : p);
@@ -213,7 +282,7 @@ function UsersTab() {
         <div className="flex gap-2">
           <button className="px-4 py-2 rounded-lg border border-slate-200 text-xs font-semibold bg-white hover:bg-slate-50 active:scale-[0.99] transition" onClick={load}>↻ Refresh</button>
           <button className="px-4 py-2 rounded-lg bg-slate-900 text-white shadow-sm hover:bg-slate-800 active:scale-[0.99] transition text-xs font-semibold"
-            onClick={() => setEditUser({ ...blankUser })}>+ Add User</button>
+            onClick={() => { setNewUserPassword(""); setEditUser({ ...blankUser }); }}>+ Add User</button>
         </div>
       </div>
 
@@ -233,6 +302,12 @@ function UsersTab() {
                   <div className="text-[10px] text-slate-500">{u.email}</div>
                 </div>
                 <div className="flex gap-1.5 items-center flex-wrap justify-end">
+                  {!u.auth_uid && (
+                    <span className="text-[9px] bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded font-semibold">NO AUTH</span>
+                  )}
+                  {u.auth_uid && u.must_change_password && (
+                    <span className="text-[9px] bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded font-semibold">PWD CHANGE</span>
+                  )}
                   {u.deactivation_source === "orgchart_removed" && (
                     <span className="text-[9px] bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded font-semibold">SNR - Removed</span>
                   )}
@@ -297,6 +372,15 @@ function UsersTab() {
                       value={editUser.email} onChange={e => su("email", e.target.value)} placeholder="user@company.com" />
                   </div>
                 </div>
+                {/* Password field for new users */}
+                {!editUser.id && (
+                  <div className="mt-3">
+                    <label className="text-[10px] font-medium text-slate-500 block mb-0.5">Temporary Password</label>
+                    <input type="password" className="w-full border border-slate-200/70 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-200"
+                      value={newUserPassword} onChange={e => setNewUserPassword(e.target.value)} placeholder="Min 8 characters (creates login account)" />
+                    <p className="text-[9px] text-slate-400 mt-0.5">Leave blank to create user without login. User will be forced to change password on first login.</p>
+                  </div>
+                )}
               </div>
 
               {/* Role & Linking */}
@@ -449,6 +533,36 @@ function UsersTab() {
                   })()}
                 </div>
               </div>
+
+              {/* Authentication */}
+              {editUser.id && (
+                <div>
+                  <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Authentication</div>
+                  <div className="border border-slate-200 rounded-lg p-3">
+                    {editUser.auth_uid ? (
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <span className="text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-semibold">AUTH ACTIVE</span>
+                          {editUser.must_change_password && (
+                            <span className="text-[10px] bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded font-semibold ml-1.5">PWD CHANGE PENDING</span>
+                          )}
+                        </div>
+                        <button
+                          className="px-3 py-1.5 text-[10px] font-semibold rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors"
+                          onClick={() => resetPassword(editUser.id!)}
+                          type="button"
+                        >
+                          Reset Password
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="text-[10px] text-slate-400">
+                        No auth account linked. This user cannot log in.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* Active Toggle */}
               <div className="flex items-center gap-3">
