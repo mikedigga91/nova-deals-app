@@ -130,6 +130,7 @@ const DEFAULT_ROLES_BY_DEPT: Record<string, string[]> = {
 const LS_DEPT_ORDER = "orgchart_dept_order_v1";
 const LS_ROLES_BY_DEPT = "orgchart_roles_by_dept_v1";
 const LS_CUSTOM_COLORS = "orgchart_dept_colors_v1";
+const LS_EMP_COLORS = "orgchart_emp_colors_v1";
 
 /* Optional Supabase tables */
 const TABLE_DEPTS = "org_departments";
@@ -401,11 +402,24 @@ export default function OrgChart() {
     return {};
   });
 
-  const getCardColor = useCallback((dept: string): DeptHexColor => {
+  /* Custom per-employee colors (persisted to localStorage) */
+  const [customEmpColors, setCustomEmpColors] = useState<Record<string, string>>(() => {
+    try {
+      const saved = localStorage.getItem(LS_EMP_COLORS);
+      if (saved) { const parsed = JSON.parse(saved); if (parsed && typeof parsed === "object") return parsed; }
+    } catch { /* ignore */ }
+    return {};
+  });
+
+  /* Color being edited in the modal (null = use department color) */
+  const [editEmpColor, setEditEmpColor] = useState<string | null>(null);
+
+  const getCardColor = useCallback((dept: string, empId?: string): DeptHexColor => {
+    if (empId && customEmpColors[empId]) return deriveDeptColorFromHex(customEmpColors[empId]);
     const custom = customDeptColors[dept];
     if (custom) return deriveDeptColorFromHex(custom);
     return DEPT_HEX_COLORS[dept] || DEFAULT_DEPT_HEX;
-  }, [customDeptColors]);
+  }, [customDeptColors, customEmpColors]);
 
   /* Card drag/drop for ordering and re-parenting */
   const cardDragRef = useRef<{ id: string } | null>(null);
@@ -496,6 +510,10 @@ export default function OrgChart() {
   useEffect(() => {
     try { localStorage.setItem(LS_CUSTOM_COLORS, JSON.stringify(customDeptColors)); } catch { /* ignore */ }
   }, [customDeptColors]);
+
+  useEffect(() => {
+    try { localStorage.setItem(LS_EMP_COLORS, JSON.stringify(customEmpColors)); } catch { /* ignore */ }
+  }, [customEmpColors]);
 
   /* ── Layout ── */
   const { nodes, width: treeWidth, height: treeHeight } = useMemo(
@@ -775,6 +793,13 @@ export default function OrgChart() {
       const { error } = await supabase.from("employees").update(payload).eq("id", editEmp.id);
       if (error) { setMsg(`Error: ${error.message}`); setSaving(false); return; }
 
+      // Save or remove per-employee color
+      setCustomEmpColors(prev => {
+        const next = { ...prev };
+        if (editEmpColor) next[editEmp.id] = editEmpColor; else delete next[editEmp.id];
+        return next;
+      });
+
       // Sync is_active toggle to linked portal_user
       const oldEmp = employees.find(e => e.id === editEmp.id);
       if (oldEmp && oldEmp.is_active !== editEmp.is_active) {
@@ -795,6 +820,11 @@ export default function OrgChart() {
       // Creating new employee — get back the inserted row
       const { data: inserted, error } = await supabase.from("employees").insert(payload).select("id, email, full_name").single();
       if (error) { setMsg(`Error: ${error.message}`); setSaving(false); return; }
+
+      // Save per-employee color for the newly created employee
+      if (inserted && editEmpColor) {
+        setCustomEmpColors(prev => ({ ...prev, [inserted.id]: editEmpColor }));
+      }
 
       // Auto-create or link portal_user if employee has an email
       if (inserted && inserted.email) {
@@ -822,6 +852,7 @@ export default function OrgChart() {
     }
 
     setEditEmp(null);
+    setEditEmpColor(null);
     setSaving(false);
     load();
   }
@@ -838,7 +869,16 @@ export default function OrgChart() {
       .eq("linked_employee_id", id);
 
     await supabase.from("employees").delete().eq("id", id);
+
+    // Clean up per-employee color
+    setCustomEmpColors(prev => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+
     setEditEmp(null);
+    setEditEmpColor(null);
     load();
   }
 
@@ -866,6 +906,7 @@ export default function OrgChart() {
       manager_id: managerId,
       sort_order: nextSortForManager(managerId),
     });
+    setEditEmpColor(null);
     setMsg(null);
   };
 
@@ -877,6 +918,7 @@ export default function OrgChart() {
       manager_id: base.id,
       sort_order: nextSortForManager(base.id),
     });
+    setEditEmpColor(null);
     setMsg(null);
   };
 
@@ -1057,7 +1099,7 @@ export default function OrgChart() {
 
     for (const node of nodes) {
       const { x, y, employee: emp, depth } = node;
-      const dc = getCardColor(emp.department);
+      const dc = getCardColor(emp.department, emp.id);
       const ds = getDepthStyle(depth);
 
       ctx.fillStyle = "rgba(0,0,0,0.06)";
@@ -1208,7 +1250,7 @@ export default function OrgChart() {
 
               <button
                 className="px-4 py-2 rounded-lg bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 shadow-sm transition-all flex items-center gap-1.5"
-                onClick={() => setEditEmp({ ...blankEmployee })}
+                onClick={() => { setEditEmp({ ...blankEmployee }); setEditEmpColor(null); }}
               >
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
                   <line x1="12" y1="5" x2="12" y2="19" />
@@ -1390,7 +1432,7 @@ export default function OrgChart() {
             <div className="text-xs text-slate-400 mt-1">Add your first employee to build the org chart</div>
             <button
               className="mt-4 px-5 py-2.5 rounded-lg bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 shadow-sm transition-all"
-              onClick={() => setEditEmp({ ...blankEmployee })}
+              onClick={() => { setEditEmp({ ...blankEmployee }); setEditEmpColor(null); }}
             >
               + Add Employee
             </button>
@@ -1449,7 +1491,7 @@ export default function OrgChart() {
             {/* Cards */}
             {nodes.map(node => {
               const emp = node.employee;
-              const dc = getCardColor(emp.department);
+              const dc = getCardColor(emp.department, emp.id);
               const ds = getDepthStyle(node.depth);
               const isHighlighted = emp.id === highlightId;
               const isCollapsed = collapsedSet.has(emp.id);
@@ -1524,7 +1566,7 @@ export default function OrgChart() {
                       borderLeft: `${ds.borderWidth}px solid ${dc.cardBorder}`,
                       boxShadow: ds.shadow,
                     }}
-                    onClick={() => setEditEmp({ ...emp })}
+                    onClick={() => { setEditEmp({ ...emp }); setEditEmpColor(customEmpColors[emp.id] || null); }}
                   >
                     {/* Title bar */}
                     <div className="px-3 py-2 flex items-center justify-between" style={{ backgroundColor: dc.bar }}>
@@ -1695,7 +1737,7 @@ export default function OrgChart() {
 
       {/* ═══ Edit/Create Employee Modal ═══ */}
       {editEmp && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => { setEditEmp(null); setMsg(null); }}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => { setEditEmp(null); setEditEmpColor(null); setMsg(null); }}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto border border-slate-200" onClick={ev => ev.stopPropagation()}>
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
               <div className="flex items-center gap-3">
@@ -1707,7 +1749,7 @@ export default function OrgChart() {
                 </div>
                 <span className="text-sm font-bold text-slate-800">{editEmp.id ? "Edit Employee" : "New Employee"}</span>
               </div>
-              <button className="w-8 h-8 rounded-lg hover:bg-slate-100 flex items-center justify-center text-slate-400 hover:text-slate-600 transition-colors" onClick={() => { setEditEmp(null); setMsg(null); }}>
+              <button className="w-8 h-8 rounded-lg hover:bg-slate-100 flex items-center justify-center text-slate-400 hover:text-slate-600 transition-colors" onClick={() => { setEditEmp(null); setEditEmpColor(null); setMsg(null); }}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                   <line x1="18" y1="6" x2="6" y2="18"/>
                   <line x1="6" y1="6" x2="18" y2="18"/>
@@ -1856,6 +1898,37 @@ export default function OrgChart() {
                 </div>
               </div>
 
+              {/* Card Color Picker */}
+              <div className="p-3 rounded-lg bg-slate-50 border border-slate-100">
+                <div className="flex items-center gap-3">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Card Color</span>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {COLOR_PALETTE.map(c => {
+                      const isSelected = editEmpColor === c.hex;
+                      return (
+                        <button
+                          key={c.hex}
+                          type="button"
+                          className={`w-6 h-6 rounded-full transition-all duration-150 ${isSelected ? "ring-2 ring-offset-2 ring-slate-400 scale-110" : "hover:scale-110"}`}
+                          style={{ backgroundColor: c.hex }}
+                          title={c.name}
+                          onClick={() => setEditEmpColor(c.hex)}
+                        />
+                      );
+                    })}
+                  </div>
+                  {editEmpColor && (
+                    <button
+                      type="button"
+                      className="text-[10px] font-semibold text-slate-400 hover:text-slate-600 transition-colors px-2 py-1 rounded-md hover:bg-white"
+                      onClick={() => setEditEmpColor(null)}
+                    >
+                      Use department color
+                    </button>
+                  )}
+                </div>
+              </div>
+
               <div className="flex items-center gap-3 p-3 rounded-lg bg-slate-50 border border-slate-100">
                 <label className="relative inline-flex items-center cursor-pointer">
                   <input type="checkbox" checked={editEmp.is_active} onChange={e => se("is_active", e.target.checked)} className="sr-only peer" />
@@ -1890,7 +1963,7 @@ export default function OrgChart() {
               ) : <div />}
 
               <div className="flex gap-2">
-                <button className="px-4 py-2 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-100 transition-colors" onClick={() => { setEditEmp(null); setMsg(null); }}>
+                <button className="px-4 py-2 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-100 transition-colors" onClick={() => { setEditEmp(null); setEditEmpColor(null); setMsg(null); }}>
                   Cancel
                 </button>
                 <button
