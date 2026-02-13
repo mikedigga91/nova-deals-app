@@ -11,6 +11,8 @@ import Advances from "./modules/Advances";
 import UserManagement from "./modules/UserManagement";
 import Payroll from "./modules/Payroll";
 import OrgChart from "./modules/OrgChart";
+import { useAuth } from "@/lib/useAuth";
+import LoginPage from "./LoginPage";
 
 type MenuKey = "sales" | "speed" | "spp" | "cc_commissions" | "payfile" | "advances" | "user_management" | "cc_payroll" | "org_chart";
 
@@ -29,6 +31,7 @@ const MENUS: MenuItem[] = [
 ];
 
 export default function FidelioShellPage() {
+  const { user, loading, signOut } = useAuth();
   const [active, setActive] = useState<MenuKey>("spp");
   const [collapsed, setCollapsed] = useState(false);
 
@@ -39,6 +42,21 @@ export default function FidelioShellPage() {
   }, []);
 
   const activeItem = MENUS.find(m => m.key === active)!;
+
+  if (loading) {
+    return (
+      <div className="h-screen w-screen bg-[#070d18] flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 border-2 border-white/20 border-t-blue-400 rounded-full animate-spin" />
+          <span className="text-xs text-white/40">Loading...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <LoginPage />;
+  }
 
   return (
     <div className="h-screen w-screen bg-[#070d18] text-gray-100 flex flex-col overflow-hidden">
@@ -57,8 +75,11 @@ export default function FidelioShellPage() {
           <div className="text-[11px] text-white/40">
             Active: <span className="text-white/80 font-semibold">{activeItem.label}</span>
           </div>
+          <div className="text-[11px] text-white/40 truncate max-w-[180px]">
+            {user.email}
+          </div>
           <div className="h-7 w-7 rounded-full bg-white/[0.08] border border-white/[0.06] flex items-center justify-center text-[11px] text-white/50 font-semibold">
-            N
+            {user.email?.charAt(0).toUpperCase() ?? "U"}
           </div>
         </div>
       </header>
@@ -149,9 +170,30 @@ export default function FidelioShellPage() {
           </nav>
 
           {/* Sidebar footer */}
-          <div className="flex-shrink-0 border-t border-white/[0.06] px-3 py-2.5 overflow-hidden whitespace-nowrap"
-            style={{ opacity: collapsed ? 0 : 1, transition: "opacity 150ms" }}>
-            <div className="text-[9px] text-white/20 leading-tight">Nova NRG Portal v2.0</div>
+          <div className="flex-shrink-0 border-t border-white/[0.06] px-2 py-2 overflow-hidden whitespace-nowrap space-y-1.5">
+            <button
+              onClick={signOut}
+              title="Sign out"
+              type="button"
+              className={[
+                "w-full flex items-center gap-2.5 rounded-lg h-9 text-[13px] font-medium text-white/45 hover:text-red-400 hover:bg-red-500/[0.08] transition-colors",
+                collapsed ? "px-0 justify-center" : "px-2.5 justify-start",
+              ].join(" ")}
+            >
+              <span className="flex-shrink-0 w-6 h-6 rounded-md flex items-center justify-center">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                  <polyline points="16 17 21 12 16 7" />
+                  <line x1="21" y1="12" x2="9" y2="12" />
+                </svg>
+              </span>
+              <span style={{ opacity: collapsed ? 0 : 1, width: collapsed ? 0 : "auto", transition: "opacity 150ms, width 200ms" }}>
+                Sign Out
+              </span>
+            </button>
+            <div style={{ opacity: collapsed ? 0 : 1, transition: "opacity 150ms" }}>
+              <div className="text-[9px] text-white/20 leading-tight px-2.5">Nova NRG Portal v2.0</div>
+            </div>
           </div>
         </aside>
 
