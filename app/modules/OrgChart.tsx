@@ -1587,7 +1587,8 @@ export default function OrgChart() {
                   {/* Add sibling — right edge */}
                   <button
                     draggable={false}
-                    onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); }}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onDragStart={(e) => { e.stopPropagation(); e.preventDefault(); }}
                     className="absolute -right-3.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-white border-2 border-slate-200
                       flex items-center justify-center text-slate-400
                       hover:bg-blue-50 hover:border-blue-300 hover:text-blue-600
@@ -1604,7 +1605,8 @@ export default function OrgChart() {
                   {/* Add child — bottom center */}
                   <button
                     draggable={false}
-                    onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); }}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onDragStart={(e) => { e.stopPropagation(); e.preventDefault(); }}
                     className="absolute -bottom-3.5 left-1/2 -translate-x-1/2 w-7 h-7 rounded-full bg-white border-2 border-slate-200
                       flex items-center justify-center text-slate-400
                       hover:bg-blue-50 hover:border-blue-300 hover:text-blue-600
@@ -1622,7 +1624,8 @@ export default function OrgChart() {
                   {expandable && (
                     <button
                       draggable={false}
-                      onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); }}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onDragStart={(e) => { e.stopPropagation(); e.preventDefault(); }}
                       className="absolute -bottom-3.5 right-4 w-7 h-7 rounded-full bg-white border-2 border-slate-200
                         flex items-center justify-center text-slate-400
                         hover:bg-slate-100 hover:border-slate-400 hover:text-slate-700
@@ -1642,7 +1645,8 @@ export default function OrgChart() {
                   {/* Quick delete — top right */}
                   <button
                     draggable={false}
-                    onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); }}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onDragStart={(e) => { e.stopPropagation(); e.preventDefault(); }}
                     className="absolute top-2 right-2 w-6 h-6 rounded-lg bg-white/80 backdrop-blur border border-slate-200
                       flex items-center justify-center text-slate-400
                       hover:text-red-500 hover:border-red-200 hover:bg-red-50
