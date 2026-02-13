@@ -85,22 +85,43 @@ function getDepthStyle(depth: number): { shadow: string; borderWidth: number } {
   return { shadow: "0 1px 6px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.03)", borderWidth: 3 };
 }
 
-/* Color palette for custom department colors */
+/* Color palette for custom department / employee colors
+   Organized: grayscale row + 7 hues × 3 shades (light → base → dark) */
 const COLOR_PALETTE = [
+  /* Grayscale */
+  { name: "White", hex: "#ffffff" },
+  { name: "Light Gray", hex: "#d1d5db" },
+  { name: "Gray", hex: "#6b7280" },
+  { name: "Dark Gray", hex: "#374151" },
+  { name: "Black", hex: "#111827" },
+  /* Amber */
+  { name: "Amber Light", hex: "#fcd34d" },
   { name: "Amber", hex: "#f59e0b" },
-  { name: "Orange", hex: "#f97316" },
+  { name: "Amber Dark", hex: "#b45309" },
+  /* Rose */
+  { name: "Rose Light", hex: "#fda4af" },
   { name: "Rose", hex: "#f43f5e" },
-  { name: "Pink", hex: "#ec4899" },
+  { name: "Rose Dark", hex: "#be123c" },
+  /* Fuchsia */
+  { name: "Fuchsia Light", hex: "#f0abfc" },
   { name: "Fuchsia", hex: "#d946ef" },
+  { name: "Fuchsia Dark", hex: "#a21caf" },
+  /* Purple */
+  { name: "Purple Light", hex: "#c4b5fd" },
   { name: "Purple", hex: "#a855f7" },
+  { name: "Purple Dark", hex: "#7e22ce" },
+  /* Blue */
+  { name: "Blue Light", hex: "#93c5fd" },
   { name: "Blue", hex: "#3b82f6" },
-  { name: "Sky", hex: "#0ea5e9" },
+  { name: "Blue Dark", hex: "#1d4ed8" },
+  /* Cyan */
+  { name: "Cyan Light", hex: "#67e8f9" },
   { name: "Cyan", hex: "#06b6d4" },
-  { name: "Teal", hex: "#14b8a6" },
+  { name: "Cyan Dark", hex: "#0e7490" },
+  /* Emerald */
+  { name: "Emerald Light", hex: "#6ee7b7" },
   { name: "Emerald", hex: "#10b981" },
-  { name: "Lime", hex: "#84cc16" },
-  { name: "Slate", hex: "#64748b" },
-  { name: "Stone", hex: "#78716c" },
+  { name: "Emerald Dark", hex: "#047857" },
 ];
 
 function deriveDeptColorFromHex(hex: string): DeptHexColor {
@@ -1391,7 +1412,7 @@ export default function OrgChart() {
                       return (
                         <button
                           key={c.hex}
-                          className={`w-6 h-6 rounded-full transition-all duration-150 ${isSelected ? "ring-2 ring-offset-2 ring-slate-400 scale-110" : "hover:scale-110"}`}
+                          className={`w-6 h-6 rounded-full border border-slate-200 transition-all duration-150 ${isSelected ? "ring-2 ring-offset-2 ring-slate-400 scale-110" : "hover:scale-110"}`}
                           style={{ backgroundColor: c.hex }}
                           title={c.name}
                           onClick={() => setCustomDeptColors(prev => ({ ...prev, [activeDept]: c.hex }))}
@@ -1909,7 +1930,7 @@ export default function OrgChart() {
                         <button
                           key={c.hex}
                           type="button"
-                          className={`w-6 h-6 rounded-full transition-all duration-150 ${isSelected ? "ring-2 ring-offset-2 ring-slate-400 scale-110" : "hover:scale-110"}`}
+                          className={`w-6 h-6 rounded-full border border-slate-200 transition-all duration-150 ${isSelected ? "ring-2 ring-offset-2 ring-slate-400 scale-110" : "hover:scale-110"}`}
                           style={{ backgroundColor: c.hex }}
                           title={c.name}
                           onClick={() => setEditEmpColor(c.hex)}
