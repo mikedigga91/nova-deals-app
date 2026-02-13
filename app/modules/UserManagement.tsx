@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { supabase } from "@/lib/supabaseClient";
 
 /* ═══════════════════ TYPES ═══════════════════ */
@@ -23,6 +23,17 @@ type PortalUser = {
   data_scope_override: "all" | "own" | "team" | "none" | null;
   is_active: boolean;
   last_login: string | null;
+  linked_employee_id: string | null;
+  deactivation_source: string | null;
+};
+
+type OrgEmployee = {
+  id: string;
+  full_name: string;
+  position: string;
+  department: string;
+  email: string;
+  is_active: boolean;
 };
 
 /* ═══════════════════ CONSTANTS ═══════════════════ */
@@ -59,18 +70,33 @@ export default function UserManagement() {
   const [tab, setTab] = useState<"users" | "roles">("users");
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <div className="border-b border-slate-200 bg-white sticky top-0 z-10">
-        <div className="px-6 flex gap-1 pt-3">
-          {(["users", "roles"] as const).map(t => (
-            <button key={t} onClick={() => setTab(t)}
-              className={`px-5 py-2.5 text-xs font-semibold rounded-t-lg transition-colors ${tab === t ? "bg-slate-50 border border-b-0 border-slate-200 text-slate-900" : "text-slate-400 hover:text-slate-600"}`}>
-              {t === "users" ? "Users" : "Roles"}
-            </button>
-          ))}
+    <div className="min-h-screen bg-slate-50 p-4">
+      <div className="bg-white rounded-xl border border-slate-200/60 shadow-sm overflow-hidden">
+        <div className="border-b border-slate-200">
+          <div className="px-5 pt-3.5 pb-0">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-slate-600 to-slate-800 flex items-center justify-center shadow-sm">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                </svg>
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-slate-800 tracking-tight">User Management</h2>
+                <p className="text-xs text-slate-400">Manage portal users, roles & access control</p>
+              </div>
+            </div>
+            <div className="flex gap-1">
+              {(["users", "roles"] as const).map(t => (
+                <button key={t} onClick={() => setTab(t)}
+                  className={`px-5 py-2.5 text-xs font-semibold rounded-t-lg transition-colors ${tab === t ? "bg-slate-50 border border-b-0 border-slate-200 text-slate-900" : "text-slate-400 hover:text-slate-600"}`}>
+                  {t === "users" ? "Users" : "Roles"}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
+        {tab === "users" ? <UsersTab /> : <RolesTab />}
       </div>
-      {tab === "users" ? <UsersTab /> : <RolesTab />}
     </div>
   );
 }
@@ -81,6 +107,7 @@ function UsersTab() {
   const [users, setUsers] = useState<PortalUser[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
   const [repNames, setRepNames] = useState<string[]>([]);
+  const [allEmployees, setAllEmployees] = useState<OrgEmployee[]>([]);
   const [loading, setLoading] = useState(true);
   const [editUser, setEditUser] = useState<PortalUser | null>(null);
   const [saving, setSaving] = useState(false);
@@ -88,22 +115,33 @@ function UsersTab() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [{ data: u }, { data: r }, { data: reps }] = await Promise.all([
+    const [{ data: u }, { data: r }, { data: reps }, { data: emps }] = await Promise.all([
       supabase.from("portal_users").select("*").order("display_name"),
       supabase.from("roles").select("*").order("name"),
       supabase.from("deals_view").select("sales_rep").not("sales_rep", "is", null),
+      supabase.from("employees").select("id, full_name, position, department, email, is_active"),
     ]);
     if (u) setUsers(u as PortalUser[]);
     if (r) setRoles(r as Role[]);
     if (reps) setRepNames([...new Set(reps.map((d: any) => d.sales_rep).filter(Boolean))] as string[]);
+    if (emps) setAllEmployees(emps as OrgEmployee[]);
     setLoading(false);
   }, []);
+
+  const employeeMap = useMemo(() => new Map(allEmployees.map(e => [e.id, e])), [allEmployees]);
+
+  // Employees that are active and not already linked to a portal user (available for linking)
+  const availableEmployees = useMemo(() => {
+    const linkedIds = new Set(users.map(u => u.linked_employee_id).filter(Boolean));
+    return allEmployees.filter(e => e.is_active && !linkedIds.has(e.id));
+  }, [allEmployees, users]);
 
   useEffect(() => { load(); }, [load]);
 
   const blankUser: PortalUser = {
     email: "", display_name: "", role_id: null, linked_name: null,
     module_overrides: null, data_scope_override: null, is_active: true, last_login: null,
+    linked_employee_id: null, deactivation_source: null,
   };
 
   const getRoleForUser = (u: PortalUser): Role | undefined => roles.find(r => r.id === u.role_id);
@@ -124,7 +162,11 @@ function UsersTab() {
     if (!editUser) return;
     if (!editUser.email || !editUser.display_name) { setMsg("Email and name are required."); return; }
     setSaving(true); setMsg(null);
-    const payload = {
+
+    // Clear deactivation_source when admin manually reactivates a user
+    const deactivationSource = editUser.is_active ? null : editUser.deactivation_source;
+
+    const payload: Record<string, any> = {
       email: editUser.email,
       display_name: editUser.display_name,
       role_id: editUser.role_id || null,
@@ -132,6 +174,8 @@ function UsersTab() {
       module_overrides: editUser.module_overrides,
       data_scope_override: editUser.data_scope_override || null,
       is_active: editUser.is_active,
+      linked_employee_id: editUser.linked_employee_id || null,
+      deactivation_source: deactivationSource,
     };
     if (editUser.id) {
       const { error } = await supabase.from("portal_users").update(payload).eq("id", editUser.id);
@@ -179,6 +223,7 @@ function UsersTab() {
           const role = getRoleForUser(u);
           const mods = getEffectiveModules(u);
           const scope = getEffectiveScope(u);
+          const linkedEmp = u.linked_employee_id ? employeeMap.get(u.linked_employee_id) : undefined;
           return (
             <div key={u.id} onClick={() => setEditUser({ ...u })}
               className={`border rounded-xl p-4 bg-white shadow-sm cursor-pointer hover:shadow-md transition-shadow ${!u.is_active ? "opacity-50" : ""}`}>
@@ -187,13 +232,24 @@ function UsersTab() {
                   <div className="font-semibold text-sm text-slate-900">{u.display_name}</div>
                   <div className="text-[10px] text-slate-500">{u.email}</div>
                 </div>
-                <div className="flex gap-1.5 items-center">
-                  {!u.is_active && <span className="text-[9px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded font-semibold">INACTIVE</span>}
+                <div className="flex gap-1.5 items-center flex-wrap justify-end">
+                  {u.deactivation_source === "orgchart_removed" && (
+                    <span className="text-[9px] bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded font-semibold">SNR - Removed</span>
+                  )}
+                  {u.deactivation_source === "orgchart_deactivated" && (
+                    <span className="text-[9px] bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded font-semibold">SNR - Deactivated</span>
+                  )}
+                  {!u.is_active && !u.deactivation_source && <span className="text-[9px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded font-semibold">INACTIVE</span>}
                   <span className={`text-[9px] px-1.5 py-0.5 rounded font-semibold ${scopeColor(scope)}`}>{scope.toUpperCase()}</span>
                 </div>
               </div>
-              <div className="flex items-center gap-2 mb-2.5">
+              <div className="flex items-center gap-2 mb-2.5 flex-wrap">
                 <span className="text-[10px] bg-slate-800 text-white px-2 py-0.5 rounded font-semibold">{role?.name ?? "No Role"}</span>
+                {linkedEmp && (
+                  <span className="text-[10px] bg-blue-50 text-blue-700 px-2 py-0.5 rounded font-semibold">
+                    {linkedEmp.position}{linkedEmp.department ? ` · ${linkedEmp.department}` : ""}
+                  </span>
+                )}
                 {u.linked_name && <span className="text-[10px] text-slate-500">→ {u.linked_name}</span>}
               </div>
               <div className="flex flex-wrap gap-1">
@@ -288,6 +344,65 @@ function UsersTab() {
                       : `Inherits from role: ${DATA_SCOPES.find(s => s.value === (getRoleForUser(editUser)?.data_scope ?? "none"))?.desc}`}
                   </p>
                 </div>
+              </div>
+
+              {/* Org Chart Link */}
+              <div>
+                <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Org Chart Link</div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] font-medium text-slate-500 block mb-0.5">Linked Employee</label>
+                    <select className="w-full border border-slate-200/70 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-200"
+                      value={editUser.linked_employee_id ?? ""}
+                      onChange={e => {
+                        const empId = e.target.value || null;
+                        su("linked_employee_id", empId);
+                        // Auto-fill email and display_name when linking
+                        if (empId) {
+                          const emp = employeeMap.get(empId);
+                          if (emp) {
+                            if (!editUser.email && emp.email) su("email", emp.email);
+                            if (!editUser.display_name && emp.full_name) su("display_name", emp.full_name);
+                          }
+                        }
+                      }}>
+                      <option value="">None (not linked)</option>
+                      {/* Show the currently linked employee even if not in available list */}
+                      {editUser.linked_employee_id && !availableEmployees.find(e => e.id === editUser.linked_employee_id) && (() => {
+                        const emp = employeeMap.get(editUser.linked_employee_id!);
+                        return emp ? <option key={emp.id} value={emp.id}>{emp.full_name} — {emp.position} ({emp.department})</option> : null;
+                      })()}
+                      {availableEmployees.map(emp => (
+                        <option key={emp.id} value={emp.id}>{emp.full_name} — {emp.position} ({emp.department})</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    {(() => {
+                      const emp = editUser.linked_employee_id ? employeeMap.get(editUser.linked_employee_id) : undefined;
+                      if (!emp) return <div className="text-[10px] text-slate-400 pt-4">No employee linked</div>;
+                      return (
+                        <div className="border border-blue-200 bg-blue-50 rounded-lg p-2.5">
+                          <div className="text-[11px] font-semibold text-blue-900">{emp.full_name}</div>
+                          <div className="text-[10px] text-blue-700">{emp.position} · {emp.department}</div>
+                          <div className="text-[10px] text-blue-600">{emp.email}</div>
+                          <span className={`text-[9px] mt-1 inline-block px-1.5 py-0.5 rounded font-semibold ${emp.is_active ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-600"}`}>
+                            {emp.is_active ? "Active in Org Chart" : "Inactive in Org Chart"}
+                          </span>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </div>
+                {editUser.deactivation_source && (
+                  <div className="mt-2 text-[10px] text-orange-700 bg-orange-50 border border-orange-200 rounded-lg px-3 py-2">
+                    <span className="font-bold">SNR Warning:</span>{" "}
+                    {editUser.deactivation_source === "orgchart_removed"
+                      ? "This user was automatically deactivated because their employee record was removed from the Org Chart."
+                      : "This user was automatically deactivated because their employee was marked inactive in the Org Chart."}
+                    {" "}You can manually reactivate them by toggling the Active switch below.
+                  </div>
+                )}
               </div>
 
               {/* Module Access Checklist */}

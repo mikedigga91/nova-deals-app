@@ -324,6 +324,8 @@ export default function OrgChart() {
   const [collapsedSet, setCollapsedSet] = useState<Set<string>>(new Set());
   const [filterDept, setFilterDept] = useState<string | null>(null);
 
+  const [linkedEmployeeIds, setLinkedEmployeeIds] = useState<Set<string>>(new Set());
+
   const [editEmp, setEditEmp] = useState<Employee | null>(null);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -358,9 +360,14 @@ export default function OrgChart() {
   const load = useCallback(async () => {
     setLoading(true);
 
-    // Pull employees. Ordering handled in buildTree sorting.
-    const { data } = await supabase.from("employees").select("*");
+    const [{ data }, { data: linkedData }] = await Promise.all([
+      supabase.from("employees").select("*"),
+      supabase.from("portal_users").select("linked_employee_id").not("linked_employee_id", "is", null),
+    ]);
     if (data) setEmployees(data as Employee[]);
+    if (linkedData) {
+      setLinkedEmployeeIds(new Set(linkedData.map((r: any) => r.linked_employee_id).filter(Boolean)));
+    }
     setLoading(false);
   }, []);
 
@@ -705,11 +712,54 @@ export default function OrgChart() {
     }
 
     if (editEmp.id) {
+      // Updating existing employee
       const { error } = await supabase.from("employees").update(payload).eq("id", editEmp.id);
       if (error) { setMsg(`Error: ${error.message}`); setSaving(false); return; }
+
+      // Sync is_active toggle to linked portal_user
+      const oldEmp = employees.find(e => e.id === editEmp.id);
+      if (oldEmp && oldEmp.is_active !== editEmp.is_active) {
+        if (!editEmp.is_active) {
+          // Deactivating employee → deactivate linked portal user
+          await supabase.from("portal_users")
+            .update({ is_active: false, deactivation_source: "orgchart_deactivated" })
+            .eq("linked_employee_id", editEmp.id);
+        } else {
+          // Reactivating employee → reactivate portal user ONLY if deactivation was org-chart-triggered
+          await supabase.from("portal_users")
+            .update({ is_active: true, deactivation_source: null })
+            .eq("linked_employee_id", editEmp.id)
+            .eq("deactivation_source", "orgchart_deactivated");
+        }
+      }
     } else {
-      const { error } = await supabase.from("employees").insert(payload);
+      // Creating new employee — get back the inserted row
+      const { data: inserted, error } = await supabase.from("employees").insert(payload).select("id, email, full_name").single();
       if (error) { setMsg(`Error: ${error.message}`); setSaving(false); return; }
+
+      // Auto-create or link portal_user if employee has an email
+      if (inserted && inserted.email) {
+        const { data: existingUser } = await supabase.from("portal_users")
+          .select("id")
+          .eq("email", inserted.email)
+          .maybeSingle();
+
+        if (existingUser) {
+          // Link existing portal user to this employee
+          await supabase.from("portal_users")
+            .update({ linked_employee_id: inserted.id })
+            .eq("id", existingUser.id);
+        } else {
+          // Create new portal user linked to this employee
+          await supabase.from("portal_users").insert({
+            display_name: inserted.full_name,
+            email: inserted.email,
+            linked_employee_id: inserted.id,
+            is_active: true,
+            role_id: null,
+          });
+        }
+      }
     }
 
     setEditEmp(null);
@@ -723,6 +773,11 @@ export default function OrgChart() {
       setMsg("Cannot delete: this employee has direct reports. Reassign them first.");
       return;
     }
+    // Deactivate linked portal user BEFORE deleting (ON DELETE SET NULL clears the FK after)
+    await supabase.from("portal_users")
+      .update({ is_active: false, deactivation_source: "orgchart_removed" })
+      .eq("linked_employee_id", id);
+
     await supabase.from("employees").delete().eq("id", id);
     setEditEmp(null);
     load();
@@ -1010,9 +1065,10 @@ export default function OrgChart() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col" style={{ height: "calc(100vh - 64px)" }}>
+    <div className="min-h-screen bg-slate-50 flex flex-col p-4" style={{ height: "calc(100vh - 64px)" }}>
+      <div className="flex-1 min-h-0 flex flex-col bg-white rounded-xl border border-slate-200/60 shadow-sm overflow-hidden">
       {/* ═══ Toolbar ═══ */}
-      <div className="flex-shrink-0 bg-white border-b border-slate-200 shadow-sm">
+      <div className="flex-shrink-0 border-b border-slate-200">
         <div className="px-6 py-3.5">
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
@@ -1365,10 +1421,15 @@ export default function OrgChart() {
                     onClick={() => setEditEmp({ ...emp })}
                   >
                     {/* Title bar */}
-                    <div className="px-3 py-2 flex items-center" style={{ backgroundColor: rc.bar }}>
+                    <div className="px-3 py-2 flex items-center justify-between" style={{ backgroundColor: rc.bar }}>
                       <span className="text-[11px] font-bold tracking-wide" style={{ color: rc.barText }}>
                         {emp.position || emp.department || "Employee"}
                       </span>
+                      {linkedEmployeeIds.has(emp.id) && (
+                        <span className="text-[8px] font-bold bg-emerald-400 text-white px-1.5 py-0.5 rounded-full leading-none">
+                          Portal User
+                        </span>
+                      )}
                     </div>
 
                     {/* Body */}
@@ -1511,6 +1572,8 @@ export default function OrgChart() {
           </div>
         </div>
       )}
+
+      </div>{/* end rounded card wrapper */}
 
       {/* ═══ Edit/Create Employee Modal ═══ */}
       {editEmp && (

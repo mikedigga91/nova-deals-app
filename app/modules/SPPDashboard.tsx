@@ -143,7 +143,7 @@ function useDebouncedEffect(effect: () => void, deps: any[], delayMs: number) {
 }
 
 const UI = {
-  topSticky: "sticky top-0 z-30 bg-slate-50/95 backdrop-blur border-b border-slate-200/60",
+  topSticky: "sticky top-0 z-30 bg-white/95 backdrop-blur border-b border-slate-200/60",
   contentPad: "p-4 space-y-3",
   card: "bg-white rounded-xl border border-slate-200/60 shadow-sm",
   cardPad: "p-4",
@@ -433,9 +433,21 @@ export default function SPPDashboard() {
   }, [displayRows, sortCol, sortDir]);
 
   return (
-    <div className="min-h-0 flex flex-col overflow-hidden bg-slate-50" style={containerStyle}>
+    <div className="min-h-0 flex flex-col overflow-hidden bg-slate-50 p-4" style={containerStyle}>
+      <div className="flex-1 min-h-0 flex flex-col bg-white rounded-xl border border-slate-200/60 shadow-sm overflow-hidden">
       <div className={UI.topSticky}>
         <div className={UI.contentPad}>
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-indigo-500 to-indigo-700 flex items-center justify-center shadow-sm">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="18" y1="20" x2="18" y2="10" /><line x1="12" y1="20" x2="12" y2="4" /><line x1="6" y1="20" x2="6" y2="14" />
+              </svg>
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-slate-800 tracking-tight">SPP Dashboard</h2>
+              <p className="text-xs text-slate-400">Sales performance & pipeline analytics</p>
+            </div>
+          </div>
           <div className="grid grid-cols-1 xl:grid-cols-[360px_1fr] gap-3">
             <div className={`${UI.card} ${UI.cardPad}`}>
               <div className="space-y-3">
@@ -506,8 +518,8 @@ export default function SPPDashboard() {
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 px-4 pb-2">
-        <div className={`${UI.card} h-full overflow-auto`}>
+      <div className="flex-1 min-h-0">
+        <div className="h-full overflow-auto">
           <table className="min-w-[3600px] w-full text-xs">
             <thead className="sticky top-0 z-10 bg-white/90 backdrop-blur border-b border-slate-200/60">
               <tr className="text-left text-slate-700">
@@ -612,6 +624,7 @@ export default function SPPDashboard() {
           </table>
         </div>
       </div>
+      </div>{/* end rounded card wrapper */}
     </div>
   );
 }

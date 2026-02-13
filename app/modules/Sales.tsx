@@ -349,14 +349,22 @@ export default function Sales() {
   const containerStyle: React.CSSProperties = { height: `calc(100dvh - ${PORTAL_HEADER_PX}px)`, maxHeight: `calc(100dvh - ${PORTAL_HEADER_PX}px)` };
 
   return (
-    <div className="min-h-0 flex flex-col overflow-hidden bg-slate-50" style={containerStyle}>
+    <div className="min-h-0 flex flex-col overflow-hidden bg-slate-50 p-4" style={containerStyle}>
+      <div className="flex-1 min-h-0 flex flex-col bg-white rounded-xl border border-slate-200/60 shadow-sm overflow-hidden">
       {/* Sticky top: filters */}
-      <div className="sticky top-0 z-30 bg-slate-50/95 backdrop-blur border-b border-slate-200/60">
+      <div className="sticky top-0 z-30 bg-white/95 backdrop-blur border-b border-slate-200/60">
         <div className="p-4 space-y-3">
           <div className="flex items-center justify-between">
-            <div>
-              <div className="text-base font-semibold text-slate-900">Sales</div>
-              <div className="text-[11px] text-slate-500">Click any row to edit · Filters auto-apply as you type</div>
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-emerald-500 to-emerald-700 flex items-center justify-center shadow-sm">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="12" y1="1" x2="12" y2="23" /><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+                </svg>
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-slate-800 tracking-tight">Sales</h2>
+                <p className="text-xs text-slate-400">Click any row to edit · Filters auto-apply as you type</p>
+              </div>
             </div>
             <div className="flex gap-2 items-center">
               <span className={UI.pill}>{loading ? "Loading…" : `${rows.length} deals`}</span>
@@ -392,8 +400,8 @@ export default function Sales() {
       </div>
 
       {/* Table */}
-      <div className="flex-1 min-h-0 px-4 pb-2">
-        <div className={`${UI.card} h-full overflow-auto`}>
+      <div className="flex-1 min-h-0">
+        <div className="h-full overflow-auto">
           <table className="min-w-[5000px] w-full text-xs">
             <thead className="sticky top-0 z-10 bg-white/95 backdrop-blur border-b border-slate-200/60">
               <tr className="text-left text-slate-700">
@@ -428,6 +436,8 @@ export default function Sales() {
           </table>
         </div>
       </div>
+
+      </div>{/* end rounded card wrapper */}
 
       {/* Edit Dialog */}
       {editRow && (

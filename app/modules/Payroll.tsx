@@ -419,12 +419,13 @@ export default function Payroll(){
   }
 
   return(
-    <div className="min-h-0 flex flex-col overflow-hidden bg-slate-50" style={cStyle}>
+    <div className="min-h-0 flex flex-col overflow-hidden bg-slate-50 p-4" style={cStyle}>
       <style>{`@media print{body *{visibility:hidden}#print-area,#print-area *{visibility:visible}#print-area{position:absolute;left:0;top:0;width:100%}}`}</style>
-      <div className="sticky top-0 z-30 bg-slate-50/95 backdrop-blur border-b border-slate-200/60 overflow-y-auto max-h-[60vh]">
+      <div className="flex-1 min-h-0 flex flex-col bg-white rounded-xl border border-slate-200/60 shadow-sm overflow-hidden">
+      <div className="sticky top-0 z-30 bg-white/95 backdrop-blur border-b border-slate-200/60 overflow-y-auto max-h-[60vh]">
         <div className="p-4 space-y-3">
           <div className="flex items-center justify-between">
-            <div><div className="text-base font-semibold text-slate-900">Payroll</div><div className="text-[11px] text-slate-500">Weekly & monthly payroll · Click row to edit</div></div>
+            <div className="flex items-center gap-3"><div className="w-9 h-9 rounded-lg bg-gradient-to-br from-slate-600 to-slate-800 flex items-center justify-center shadow-sm"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="2" width="16" height="20" rx="2" /><line x1="8" y1="6" x2="16" y2="6" /><line x1="8" y1="10" x2="16" y2="10" /><line x1="8" y1="14" x2="12" y2="14" /></svg></div><div><h2 className="text-base font-bold text-slate-800 tracking-tight">Payroll</h2><p className="text-xs text-slate-400">Weekly & monthly payroll · Click row to edit</p></div></div>
             <div className="flex gap-2 items-center">
               <span className={UI.pill}>{loading?"…":`${weeks.length} entries`}</span>
               <button className={UI.bg} onClick={openStaffDialog}>Manage Staff</button>
@@ -526,6 +527,8 @@ export default function Payroll(){
           </tbody>
         </table>
       </div></div>)}
+
+      </div>{/* end rounded card wrapper */}
 
       {/* EDIT DIALOG */}
       {editPW&&editStaff&&(

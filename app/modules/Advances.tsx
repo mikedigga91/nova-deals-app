@@ -51,20 +51,35 @@ export default function Advances() {
   const [tab, setTab] = useState<"summary" | "ledger">("summary");
 
   return (
-    <div className="bg-slate-50">
-      {/* Tabs */}
-      <div className="border-b border-slate-200 bg-white sticky top-0 z-10">
-        <div className="px-6 flex gap-1 pt-3">
-          {(["summary", "ledger"] as const).map(t => (
-            <button key={t} onClick={() => setTab(t)}
-              className={`px-5 py-2.5 text-xs font-semibold rounded-t-lg transition-colors ${tab === t ? "bg-slate-50 border border-b-0 border-slate-200 text-slate-900" : "text-slate-400 hover:text-slate-600"}`}>
-              {t === "summary" ? "Advance Summary" : "Transaction Ledger"}
-            </button>
-          ))}
+    <div className="bg-slate-50 p-4">
+      <div className="bg-white rounded-xl border border-slate-200/60 shadow-sm overflow-hidden">
+        {/* Header + Tabs */}
+        <div className="border-b border-slate-200">
+          <div className="px-5 pt-3.5 pb-0">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-rose-500 to-rose-700 flex items-center justify-center shadow-sm">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="2" y="5" width="20" height="14" rx="2" /><line x1="2" y1="10" x2="22" y2="10" />
+                </svg>
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-slate-800 tracking-tight">Advances</h2>
+                <p className="text-xs text-slate-400">Cash advance balances, repayments & ledger</p>
+              </div>
+            </div>
+            <div className="flex gap-1">
+              {(["summary", "ledger"] as const).map(t => (
+                <button key={t} onClick={() => setTab(t)}
+                  className={`px-5 py-2.5 text-xs font-semibold rounded-t-lg transition-colors ${tab === t ? "bg-slate-50 border border-b-0 border-slate-200 text-slate-900" : "text-slate-400 hover:text-slate-600"}`}>
+                  {t === "summary" ? "Advance Summary" : "Transaction Ledger"}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
-      </div>
 
-      {tab === "summary" ? <SummaryTab /> : <LedgerTab />}
+        {tab === "summary" ? <SummaryTab /> : <LedgerTab />}
+      </div>
     </div>
   );
 }

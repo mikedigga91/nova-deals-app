@@ -251,13 +251,16 @@ export default function CCCommissionsOverview() {
       <div className="bg-white rounded-xl border border-slate-200/60 shadow-sm overflow-hidden">
         {/* ── Header ──────────────────────────────────────── */}
         <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
-          <div>
-            <h1 className="text-base font-semibold text-slate-900">
-              Commissions Overview
-            </h1>
-            <p className="text-[11px] text-slate-500 mt-0.5">
-              Track setter &amp; manager payouts
-            </p>
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-amber-500 to-amber-700 flex items-center justify-center shadow-sm">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
+              </svg>
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-slate-800 tracking-tight">CC Commissions Overview</h2>
+              <p className="text-xs text-slate-400">Track setter &amp; manager payouts</p>
+            </div>
           </div>
           <div className="flex gap-2.5">
             <LegendSwatch bg="rgba(74,222,128,0.35)" label="Partial" />

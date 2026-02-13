@@ -137,24 +137,33 @@ export default function Payfile() {
   const [tab,setTab]=useState<"deals"|"payfile">("deals");
   useEffect(()=>{injectPrint();},[]);
   return (
-    <div className="min-h-screen bg-slate-50">
-      <div className="no-print border-b bg-white px-6 py-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-bold tracking-tight text-slate-900">Pay File</h1>
-            <p className="text-xs text-slate-500 mt-0.5">Manage deal payouts and generate commission sheets</p>
-          </div>
-          <div className="flex bg-slate-100 rounded-lg p-0.5">
-            {(["deals","payfile"] as const).map(t=>(
-              <button key={t} onClick={()=>setTab(t)}
-                className={`px-4 py-1.5 rounded-md text-xs font-semibold transition-all ${tab===t?"bg-white text-slate-900 shadow-sm":"text-slate-500 hover:text-slate-700"}`}>
-                {t==="deals"?"Deal Manager":"Generate Payfile"}
-              </button>
-            ))}
+    <div className="min-h-screen bg-slate-50 p-4">
+      <div className="bg-white rounded-xl border border-slate-200/60 shadow-sm overflow-hidden">
+        <div className="no-print px-5 py-3.5 border-b border-slate-200">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-violet-500 to-violet-700 flex items-center justify-center shadow-sm">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" />
+                </svg>
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-slate-800 tracking-tight">Pay File</h2>
+                <p className="text-xs text-slate-400">Manage deal payouts and generate commission sheets</p>
+              </div>
+            </div>
+            <div className="flex bg-slate-100 rounded-lg p-0.5">
+              {(["deals","payfile"] as const).map(t=>(
+                <button key={t} onClick={()=>setTab(t)}
+                  className={`px-4 py-1.5 rounded-md text-xs font-semibold transition-all ${tab===t?"bg-white text-slate-900 shadow-sm":"text-slate-500 hover:text-slate-700"}`}>
+                  {t==="deals"?"Deal Manager":"Generate Payfile"}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
+        {tab==="deals"?<DealManager />:<PayfileGenerator />}
       </div>
-      {tab==="deals"?<DealManager />:<PayfileGenerator />}
     </div>
   );
 }

@@ -238,14 +238,22 @@ export default function CCPayroll(){
   },[weeks,commissions,staffMap]);
 
   return(
-    <div className="min-h-0 flex flex-col overflow-hidden bg-slate-50" style={containerStyle}>
+    <div className="min-h-0 flex flex-col overflow-hidden bg-slate-50 p-4" style={containerStyle}>
+      <div className="flex-1 min-h-0 flex flex-col bg-white rounded-xl border border-slate-200/60 shadow-sm overflow-hidden">
       {/* Header */}
-      <div className="sticky top-0 z-30 bg-slate-50/95 backdrop-blur border-b border-slate-200/60">
+      <div className="sticky top-0 z-30 bg-white/95 backdrop-blur border-b border-slate-200/60">
         <div className="p-4 space-y-3">
           <div className="flex items-center justify-between">
-            <div>
-              <div className="text-base font-semibold text-slate-900">CC Payroll</div>
-              <div className="text-[11px] text-slate-500">Weekly payroll · Click row to edit · Search to filter by name</div>
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-teal-500 to-teal-700 flex items-center justify-center shadow-sm">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="4" y="2" width="16" height="20" rx="2" /><line x1="8" y1="6" x2="16" y2="6" /><line x1="8" y1="10" x2="16" y2="10" /><line x1="8" y1="14" x2="12" y2="14" />
+                </svg>
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-slate-800 tracking-tight">CC Payroll</h2>
+                <p className="text-xs text-slate-400">Weekly payroll · Click row to edit · Search to filter</p>
+              </div>
             </div>
             <div className="flex gap-2 items-center">
               <span className={UI.pill}>{loading?"Loading…":`${weeks.length} entries`}</span>
@@ -431,6 +439,8 @@ export default function CCPayroll(){
           </table>
         </div>
       </div>
+
+      </div>{/* end rounded card wrapper */}
 
       {/* ═══ EDIT DIALOG ═══ */}
       {editPW&&editStaff&&(
