@@ -1538,11 +1538,11 @@ export default function OrgChart() {
                   }}
                   className={`group transition-all duration-200 hover:-translate-y-0.5 ${isDragging ? "opacity-40" : ""}`}
                 >
-                  {/* ── Drop zone indicators (visible during drag) ── */}
+                  {/* ── Drop zone indicators (pointer-events only during drag) ── */}
 
                   {/* Left reorder zone */}
                   <div
-                    className="absolute -left-3 top-2 bottom-2 w-8 z-30 rounded-l-lg"
+                    className={`absolute -left-3 top-2 bottom-2 w-8 z-30 rounded-l-lg ${cardDragRef.current ? "" : "pointer-events-none"}`}
                     onDragOver={allowDrop}
                     onDragEnter={onZoneDragEnter(emp.id, "left")}
                     onDragLeave={onZoneDragLeave}
@@ -1553,7 +1553,7 @@ export default function OrgChart() {
 
                   {/* Right reorder zone */}
                   <div
-                    className="absolute -right-3 top-2 bottom-2 w-8 z-30 rounded-r-lg"
+                    className={`absolute -right-3 top-2 bottom-2 w-8 z-30 rounded-r-lg ${cardDragRef.current ? "" : "pointer-events-none"}`}
                     onDragOver={allowDrop}
                     onDragEnter={onZoneDragEnter(emp.id, "right")}
                     onDragLeave={onZoneDragLeave}
@@ -1564,7 +1564,7 @@ export default function OrgChart() {
 
                   {/* Bottom re-parent zone */}
                   <div
-                    className={`absolute left-4 right-4 -bottom-5 h-10 z-30 rounded-b-lg transition-all duration-150 ${isDropChild ? "bg-blue-500/10 border-2 border-dashed border-blue-400 rounded-lg" : ""}`}
+                    className={`absolute left-4 right-4 -bottom-5 h-10 z-30 rounded-b-lg transition-all duration-150 ${cardDragRef.current ? "" : "pointer-events-none"} ${isDropChild ? "bg-blue-500/10 border-2 border-dashed border-blue-400 rounded-lg" : ""}`}
                     onDragOver={allowDrop}
                     onDragEnter={onZoneDragEnter(emp.id, "child")}
                     onDragLeave={onZoneDragLeave}
@@ -1647,25 +1647,47 @@ export default function OrgChart() {
 
                   {/* ── Hover-only controls (hidden by default, fade in on hover) ── */}
 
-                  {/* Add sibling — right edge */}
+                  {/* Right edge — Expand/Collapse if has children, else Add Sibling */}
                   <button
                     draggable={false}
                     onMouseDown={(e) => e.stopPropagation()}
                     onDragStart={(e) => { e.stopPropagation(); e.preventDefault(); }}
-                    className="absolute -right-3.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-white border-2 border-slate-200
-                      flex items-center justify-center text-slate-400
-                      hover:bg-blue-50 hover:border-blue-300 hover:text-blue-600
-                      shadow-sm transition-all duration-200 z-20
-                      opacity-0 group-hover:opacity-100"
-                    onClick={(e) => { e.stopPropagation(); openAddSibling(emp); }}
-                    title="Add sibling (same level)"
+                    className={`absolute -right-3.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-white border-2
+                      flex items-center justify-center
+                      shadow-sm transition-all duration-200 z-40
+                      opacity-0 group-hover:opacity-100
+                      ${expandable
+                        ? "border-slate-300 text-slate-500 hover:bg-slate-100 hover:border-slate-400 hover:text-slate-700"
+                        : "border-slate-200 text-slate-400 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-600"
+                      }`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (expandable) toggleCollapseClick(emp.id);
+                      else openAddSibling(emp);
+                    }}
+                    title={expandable ? (isCollapsed ? "Expand children" : "Collapse children") : "Add sibling (same level)"}
                   >
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
-                      <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-                    </svg>
+                    {expandable ? (
+                      isCollapsed ? (
+                        /* + icon for expand */
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
+                          <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+                        </svg>
+                      ) : (
+                        /* − icon for collapse */
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
+                          <line x1="5" y1="12" x2="19" y2="12" />
+                        </svg>
+                      )
+                    ) : (
+                      /* + icon for add sibling */
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
+                        <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+                      </svg>
+                    )}
                   </button>
 
-                  {/* Add child — bottom center */}
+                  {/* Bottom center — Add child */}
                   <button
                     draggable={false}
                     onMouseDown={(e) => e.stopPropagation()}
@@ -1673,7 +1695,7 @@ export default function OrgChart() {
                     className="absolute -bottom-3.5 left-1/2 -translate-x-1/2 w-7 h-7 rounded-full bg-white border-2 border-slate-200
                       flex items-center justify-center text-slate-400
                       hover:bg-blue-50 hover:border-blue-300 hover:text-blue-600
-                      shadow-sm transition-all duration-200 z-20
+                      shadow-sm transition-all duration-200 z-40
                       opacity-0 group-hover:opacity-100"
                     onClick={(e) => { e.stopPropagation(); openAddChild(emp); }}
                     title="Add direct report (child)"
@@ -1683,28 +1705,6 @@ export default function OrgChart() {
                     </svg>
                   </button>
 
-                  {/* Expand / Collapse — bottom right */}
-                  {expandable && (
-                    <button
-                      draggable={false}
-                      onMouseDown={(e) => e.stopPropagation()}
-                      onDragStart={(e) => { e.stopPropagation(); e.preventDefault(); }}
-                      className="absolute -bottom-3.5 right-4 w-7 h-7 rounded-full bg-white border-2 border-slate-200
-                        flex items-center justify-center text-slate-400
-                        hover:bg-slate-100 hover:border-slate-400 hover:text-slate-700
-                        shadow-sm transition-all duration-200 z-20
-                        opacity-0 group-hover:opacity-100"
-                      onClick={(e) => { e.stopPropagation(); toggleCollapseClick(emp.id); }}
-                      title={isCollapsed ? "Expand children" : "Collapse children"}
-                    >
-                      {isCollapsed ? (
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><polyline points="6 9 12 15 18 9" /></svg>
-                      ) : (
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><polyline points="18 15 12 9 6 15" /></svg>
-                      )}
-                    </button>
-                  )}
-
                   {/* Quick delete — top right */}
                   <button
                     draggable={false}
@@ -1713,7 +1713,7 @@ export default function OrgChart() {
                     className="absolute top-2 right-2 w-6 h-6 rounded-lg bg-white/80 backdrop-blur border border-slate-200
                       flex items-center justify-center text-slate-400
                       hover:text-red-500 hover:border-red-200 hover:bg-red-50
-                      transition-all duration-200 z-20
+                      transition-all duration-200 z-40
                       opacity-0 group-hover:opacity-100"
                     onClick={(e) => {
                       e.stopPropagation();
