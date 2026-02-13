@@ -444,6 +444,7 @@ export default function OrgChart() {
 
   /* Card drag/drop for ordering and re-parenting */
   const cardDragRef = useRef<{ id: string } | null>(null);
+  const [isDraggingCard, setIsDraggingCard] = useState(false);
   const [dragOverTarget, setDragOverTarget] = useState<{ id: string; zone: "left" | "right" | "child" } | null>(null);
 
   /* ── Data Loading ── */
@@ -946,6 +947,7 @@ export default function OrgChart() {
   /* ── Card Drag & Drop (reorder + reparent) ── */
   const onCardDragStart = (id: string) => (e: React.DragEvent) => {
     cardDragRef.current = { id };
+    setIsDraggingCard(true);
     e.dataTransfer.effectAllowed = "move";
     // Use a semi-transparent clone as the drag image
     const el = e.currentTarget as HTMLElement;
@@ -961,6 +963,7 @@ export default function OrgChart() {
 
   const onCardDragEnd = () => {
     cardDragRef.current = null;
+    setIsDraggingCard(false);
     setDragOverTarget(null);
   };
 
@@ -1542,7 +1545,7 @@ export default function OrgChart() {
 
                   {/* Left reorder zone */}
                   <div
-                    className={`absolute -left-3 top-2 bottom-2 w-8 z-30 rounded-l-lg ${cardDragRef.current ? "" : "pointer-events-none"}`}
+                    className={`absolute -left-3 top-2 bottom-2 w-8 z-30 rounded-l-lg ${isDraggingCard ? "" : "pointer-events-none"}`}
                     onDragOver={allowDrop}
                     onDragEnter={onZoneDragEnter(emp.id, "left")}
                     onDragLeave={onZoneDragLeave}
@@ -1553,7 +1556,7 @@ export default function OrgChart() {
 
                   {/* Right reorder zone */}
                   <div
-                    className={`absolute -right-3 top-2 bottom-2 w-8 z-30 rounded-r-lg ${cardDragRef.current ? "" : "pointer-events-none"}`}
+                    className={`absolute -right-3 top-2 bottom-2 w-8 z-30 rounded-r-lg ${isDraggingCard ? "" : "pointer-events-none"}`}
                     onDragOver={allowDrop}
                     onDragEnter={onZoneDragEnter(emp.id, "right")}
                     onDragLeave={onZoneDragLeave}
@@ -1564,7 +1567,7 @@ export default function OrgChart() {
 
                   {/* Bottom re-parent zone */}
                   <div
-                    className={`absolute left-4 right-4 -bottom-5 h-10 z-30 rounded-b-lg transition-all duration-150 ${cardDragRef.current ? "" : "pointer-events-none"} ${isDropChild ? "bg-blue-500/10 border-2 border-dashed border-blue-400 rounded-lg" : ""}`}
+                    className={`absolute left-4 right-4 -bottom-5 h-10 z-30 rounded-b-lg transition-all duration-150 ${isDraggingCard ? "" : "pointer-events-none"} ${isDropChild ? "bg-blue-500/10 border-2 border-dashed border-blue-400 rounded-lg" : ""}`}
                     onDragOver={allowDrop}
                     onDragEnter={onZoneDragEnter(emp.id, "child")}
                     onDragLeave={onZoneDragLeave}
