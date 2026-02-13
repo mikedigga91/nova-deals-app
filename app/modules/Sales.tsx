@@ -1,0 +1,484 @@
+"use client";
+
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { supabase } from "@/lib/supabaseClient";
+
+const PORTAL_HEADER_PX = 64;
+
+type DealRow = {
+  id: string;
+  sales_rep: string | null; company: string | null; customer_name: string | null;
+  appointment_setter: string | null; call_center_appointment_setter: string | null;
+  company_barayev_input: string | null;
+  kw_system: number | null; agent_cost_basis_sold_at: number | null; net_price_per_watt: number | null;
+  date_closed: string | null;
+  contract_value: number | null; total_adders: number | null; contract_net_price: number | null;
+  rev: number | null; gross_profit: number | null;
+  visionary_paid_out_commission: number | null; nova_nrg_customer_adders: number | null; agent_payout: number | null;
+  manager: string | null; manager_amount: number | null;
+  status: string | null; p1_nova_nrg_paid: number | null;
+  site_survey_date_completed: string | null; site_survey_status: string | null;
+  owed_money: number | null; paid_bonus: number | null; fee_charges: number | null;
+  notes: string | null;
+  install_partner: string | null; state: string | null; teams: string | null;
+  activated: string | null; online_deal: string | null; call_center_lead: string | null;
+  month_year: string | null; commission_structure: string | null;
+  revenue: number | null;
+  paid_nova_nrg_p2_rev_date: string | null; paid_nova_nrg_p1_p2_rev_amount: number | null;
+  paid_nova_nrg_post_p2_date: string | null; paid_nova_nrg_post_p2_rev_amount: number | null;
+  nova_nrg_reversal_date: string | null; nova_nrg_reversal_amount: number | null;
+  nova_nrg_fee_amount: number | null; nova_nrg_rev_after_fee_amount: number | null;
+  visionary_revenue: number | null;
+  paid_visionary_p2_date: string | null; paid_visionary_p1_p2_amount: number | null;
+  paid_visionary_post_p2_date: string | null; paid_visionary_post_p2_amount: number | null;
+  p1_visionary_reversal_date: string | null; p1_visionary_reversal_amount: number | null;
+  visionary_fee_amount: number | null; visionary_rev_after_fee_amount: number | null;
+  agent_pay: number | null;
+  paid_agent_p2_date: string | null; paid_agent_p1_p2_amount: number | null;
+  paid_agent_post_p2_date: string | null; paid_agent_post_p2_amount: number | null;
+  p1_agent_reversal_date: string | null; p1_agent_reversal_amount: number | null;
+  agent_fee_amount: number | null; agent_rev_after_fee_amount: number | null;
+  agent_net_price: number | null; only_agent_net_price_accounts: string | null;
+};
+
+const SELECT_COLUMNS = [
+  "id","sales_rep","company","customer_name","appointment_setter","call_center_appointment_setter",
+  "company_barayev_input","kw_system","agent_cost_basis_sold_at","net_price_per_watt","date_closed",
+  "contract_value","total_adders","contract_net_price","rev","gross_profit",
+  "visionary_paid_out_commission","nova_nrg_customer_adders","agent_payout",
+  "manager","manager_amount","status","p1_nova_nrg_paid",
+  "site_survey_date_completed","site_survey_status","owed_money","paid_bonus","fee_charges","notes",
+  "install_partner","state","teams","activated","online_deal","call_center_lead",
+  "month_year","commission_structure","revenue",
+  "paid_nova_nrg_p2_rev_date","paid_nova_nrg_p1_p2_rev_amount",
+  "paid_nova_nrg_post_p2_date","paid_nova_nrg_post_p2_rev_amount",
+  "nova_nrg_reversal_date","nova_nrg_reversal_amount","nova_nrg_fee_amount","nova_nrg_rev_after_fee_amount",
+  "visionary_revenue","paid_visionary_p2_date","paid_visionary_p1_p2_amount",
+  "paid_visionary_post_p2_date","paid_visionary_post_p2_amount",
+  "p1_visionary_reversal_date","p1_visionary_reversal_amount","visionary_fee_amount","visionary_rev_after_fee_amount",
+  "agent_pay","paid_agent_p2_date","paid_agent_p1_p2_amount",
+  "paid_agent_post_p2_date","paid_agent_post_p2_amount",
+  "p1_agent_reversal_date","p1_agent_reversal_amount","agent_fee_amount","agent_rev_after_fee_amount",
+  "agent_net_price","only_agent_net_price_accounts",
+].join(",");
+
+/* Column definition — label, DealRow key, type */
+type ColDef = { label: string; key: keyof DealRow; type: "text" | "money" | "num" | "date" };
+const COLUMNS: ColDef[] = [
+  { label: "Sales Rep", key: "sales_rep", type: "text" },
+  { label: "Company", key: "company", type: "text" },
+  { label: "Customer Name", key: "customer_name", type: "text" },
+  { label: "Appointment Setter", key: "appointment_setter", type: "text" },
+  { label: "CC App Setter", key: "call_center_appointment_setter", type: "text" },
+  { label: "Company (Barayev)", key: "company_barayev_input", type: "text" },
+  { label: "KW System", key: "kw_system", type: "num" },
+  { label: "Agent Cost Basis", key: "agent_cost_basis_sold_at", type: "money" },
+  { label: "Net $/W", key: "net_price_per_watt", type: "num" },
+  { label: "Date Closed", key: "date_closed", type: "date" },
+  { label: "Contract Value", key: "contract_value", type: "money" },
+  { label: "Total Adders", key: "total_adders", type: "money" },
+  { label: "Contract Net Price", key: "contract_net_price", type: "money" },
+  { label: "Rev", key: "rev", type: "money" },
+  { label: "Gross Profit", key: "gross_profit", type: "money" },
+  { label: "Visionary Commission", key: "visionary_paid_out_commission", type: "money" },
+  { label: "NRG Customer Adders", key: "nova_nrg_customer_adders", type: "money" },
+  { label: "Agent Payout", key: "agent_payout", type: "money" },
+  { label: "Manager", key: "manager", type: "text" },
+  { label: "Manager $", key: "manager_amount", type: "money" },
+  { label: "Status", key: "status", type: "text" },
+  { label: "P1 NRG Paid", key: "p1_nova_nrg_paid", type: "money" },
+  { label: "Survey Date", key: "site_survey_date_completed", type: "date" },
+  { label: "Survey Status", key: "site_survey_status", type: "text" },
+  { label: "Owed Money", key: "owed_money", type: "money" },
+  { label: "Paid Bonus", key: "paid_bonus", type: "money" },
+  { label: "Fee Charges", key: "fee_charges", type: "money" },
+  { label: "Notes", key: "notes", type: "text" },
+  { label: "Install Partner", key: "install_partner", type: "text" },
+  { label: "State", key: "state", type: "text" },
+  { label: "Teams", key: "teams", type: "text" },
+  { label: "Activated", key: "activated", type: "text" },
+  { label: "Online Deal", key: "online_deal", type: "text" },
+  { label: "CC Lead", key: "call_center_lead", type: "text" },
+  { label: "Month/Year", key: "month_year", type: "text" },
+  { label: "Commission Structure", key: "commission_structure", type: "text" },
+  { label: "REVENUE", key: "revenue", type: "money" },
+  { label: "NRG P2 Rev Date", key: "paid_nova_nrg_p2_rev_date", type: "date" },
+  { label: "NRG P1+P2 Rev Amt", key: "paid_nova_nrg_p1_p2_rev_amount", type: "money" },
+  { label: "NRG Post-P2 Date", key: "paid_nova_nrg_post_p2_date", type: "date" },
+  { label: "NRG Post-P2 Amt", key: "paid_nova_nrg_post_p2_rev_amount", type: "money" },
+  { label: "NRG Reversal Date", key: "nova_nrg_reversal_date", type: "date" },
+  { label: "NRG Reversal Amt", key: "nova_nrg_reversal_amount", type: "money" },
+  { label: "NRG Fee Amt", key: "nova_nrg_fee_amount", type: "money" },
+  { label: "NRG After Fee", key: "nova_nrg_rev_after_fee_amount", type: "money" },
+  { label: "Visionary Rev", key: "visionary_revenue", type: "money" },
+  { label: "Vis P2 Date", key: "paid_visionary_p2_date", type: "date" },
+  { label: "Vis P1+P2 Amt", key: "paid_visionary_p1_p2_amount", type: "money" },
+  { label: "Vis Post-P2 Date", key: "paid_visionary_post_p2_date", type: "date" },
+  { label: "Vis Post-P2 Amt", key: "paid_visionary_post_p2_amount", type: "money" },
+  { label: "Vis Reversal Date", key: "p1_visionary_reversal_date", type: "date" },
+  { label: "Vis Reversal Amt", key: "p1_visionary_reversal_amount", type: "money" },
+  { label: "Vis Fee Amt", key: "visionary_fee_amount", type: "money" },
+  { label: "Vis After Fee", key: "visionary_rev_after_fee_amount", type: "money" },
+  { label: "Agent Pay", key: "agent_pay", type: "money" },
+  { label: "Agent P2 Date", key: "paid_agent_p2_date", type: "date" },
+  { label: "Agent P1+P2 Amt", key: "paid_agent_p1_p2_amount", type: "money" },
+  { label: "Agent Post-P2 Date", key: "paid_agent_post_p2_date", type: "date" },
+  { label: "Agent Post-P2 Amt", key: "paid_agent_post_p2_amount", type: "money" },
+  { label: "Agent Reversal Date", key: "p1_agent_reversal_date", type: "date" },
+  { label: "Agent Reversal Amt", key: "p1_agent_reversal_amount", type: "money" },
+  { label: "Agent Fee Amt", key: "agent_fee_amount", type: "money" },
+  { label: "Agent After Fee", key: "agent_rev_after_fee_amount", type: "money" },
+  { label: "Agent Net Price", key: "agent_net_price", type: "money" },
+  { label: "Only Agent Net Price", key: "only_agent_net_price_accounts", type: "text" },
+];
+
+/* Helpers */
+function money(n: number | null | undefined) { if (n == null) return ""; return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(Number(n)); }
+function numFmt(n: number | null | undefined, d = 2) { if (n == null) return ""; const v = Number(n); return Number.isNaN(v) ? "" : v.toFixed(d); }
+function fmtDate(iso: string | null | undefined) { if (!iso) return ""; const p = iso.slice(0, 10).split("-"); return p.length < 3 ? iso : `${p[1]}/${p[2]}/${p[0].slice(-2)}`; }
+function cellVal(row: DealRow, col: ColDef): string {
+  const v = row[col.key];
+  if (v == null) return "";
+  if (col.type === "money") return money(v as number);
+  if (col.type === "num") return numFmt(v as number);
+  if (col.type === "date") return fmtDate(v as string);
+  return String(v);
+}
+function uniqSorted(vals: Array<string | null | undefined>) {
+  const set = new Set<string>();
+  for (const v of vals) { const s = (v ?? "").trim(); if (s) set.add(s); }
+  return Array.from(set).sort((a, b) => a.localeCompare(b));
+}
+
+const UI = {
+  card: "bg-white rounded-xl border border-slate-200/60 shadow-sm",
+  control: "w-full rounded-lg border border-slate-200/70 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-slate-200",
+  buttonPrimary: "px-3 py-2 rounded-lg bg-slate-900 text-white text-sm shadow-sm hover:bg-slate-800 active:scale-[0.99] transition",
+  buttonGhost: "px-3 py-2 rounded-lg border border-slate-200 text-sm bg-white hover:bg-slate-50 active:scale-[0.99] transition",
+  pill: "inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-semibold border border-slate-200/70 bg-slate-50 text-slate-700",
+};
+
+/* ═══ MultiSelect (same as SPPDashboard) ═══ */
+function MultiSelect({ label, options, selected, onChange, placeholder }: { label: string; options: string[]; selected: string[]; onChange: (v: string[]) => void; placeholder?: string }) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => { const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); }; document.addEventListener("mousedown", h); return () => document.removeEventListener("mousedown", h); }, []);
+  const filtered = useMemo(() => { const t = q.trim().toLowerCase(); return t ? options.filter(o => o.toLowerCase().includes(t)) : options; }, [options, q]);
+  const selSet = useMemo(() => new Set(selected), [selected]);
+  const toggle = (v: string) => { const next = selSet.has(v) ? selected.filter(x => x !== v) : [...selected, v]; next.sort((a, b) => a.localeCompare(b)); onChange(next); };
+  const text = selected.length === 0 ? (placeholder ?? "All") : selected.length === 1 ? selected[0] : `${selected.length} selected`;
+  return (
+    <div ref={ref}>
+      <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">{label}</div>
+      <div className="relative">
+        <button type="button" className={`w-full ${UI.control} text-left flex items-center justify-between gap-2`} onClick={() => setOpen(s => !s)}>
+          <span className={`truncate ${selected.length === 0 ? "text-slate-400" : "text-slate-900"}`}>{text}</span>
+          <span className="text-slate-400 text-[10px]">▾</span>
+        </button>
+        {open && (
+          <div className="absolute z-50 mt-1 w-full rounded-xl border border-slate-200/70 bg-white shadow-lg overflow-hidden">
+            <div className="p-2 border-b border-slate-200/60">
+              <input className={UI.control} placeholder="Search…" value={q} onChange={e => setQ(e.target.value)} />
+              <div className="mt-1.5 flex items-center justify-between">
+                <span className="text-[10px] text-slate-400">{selected.length === 0 ? "All" : `${selected.length} selected`}</span>
+                <button type="button" className="text-[10px] font-semibold text-slate-600 hover:text-slate-900" onClick={() => onChange([])}>Clear</button>
+              </div>
+            </div>
+            <div className="max-h-56 overflow-auto">
+              {filtered.length === 0 ? <div className="px-3 py-3 text-sm text-slate-400">No matches.</div> : filtered.map(opt => (
+                <label key={opt} className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-slate-50 cursor-pointer select-none">
+                  <input type="checkbox" checked={selSet.has(opt)} onChange={() => toggle(opt)} />
+                  <span className="truncate">{opt}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ═══ MAIN COMPONENT ═══ */
+export default function Sales() {
+  useEffect(() => { const pb = document.body.style.overflow; const ph = document.documentElement.style.overflow; document.body.style.overflow = "hidden"; document.documentElement.style.overflow = "hidden"; return () => { document.body.style.overflow = pb; document.documentElement.style.overflow = ph; }; }, []);
+
+  const [rows, setRows] = useState<DealRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  /* Filters */
+  const [salesReps, setSalesReps] = useState<string[]>([]);
+  const [ccSetters, setCcSetters] = useState<string[]>([]);
+  const [installers, setInstallers] = useState<string[]>([]);
+  const [statuses, setStatuses] = useState<string[]>([]);
+  const [customerQ, setCustomerQ] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+
+  /* Sort */
+  const [sortCol, setSortCol] = useState<number | null>(null);
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+
+  /* Edit dialog */
+  const [editRow, setEditRow] = useState<DealRow | null>(null);
+  const [editDraft, setEditDraft] = useState<Record<string, any>>({});
+  const [saving, setSaving] = useState(false);
+  const [editMsg, setEditMsg] = useState<string | null>(null);
+  const [isNew, setIsNew] = useState(false);
+
+  /* Debounce ref */
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true); setMsg(null);
+    let q = supabase.from("deals_view").select(SELECT_COLUMNS).order("date_closed", { ascending: false }).limit(5000);
+    if (startDate) q = q.gte("date_closed", startDate);
+    if (endDate) q = q.lte("date_closed", endDate);
+    if (salesReps.length) q = q.in("sales_rep", salesReps);
+    if (ccSetters.length) q = q.in("call_center_appointment_setter", ccSetters);
+    if (installers.length) q = q.in("company", installers);
+    if (statuses.length) q = q.in("status", statuses);
+    if (customerQ.trim()) q = q.ilike("customer_name", `%${customerQ.trim()}%`);
+    const { data, error } = await q;
+    if (error) { setRows([]); setMsg(`Error: ${error.message}`); }
+    else setRows((data ?? []) as unknown as DealRow[]);
+    setLoading(false);
+  }, [startDate, endDate, salesReps, ccSetters, installers, statuses, customerQ]);
+
+  /* Auto-reload on filter change with debounce */
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => load(), 300);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [load]);
+
+  /* Options from loaded rows */
+  const options = useMemo(() => ({
+    salesReps: uniqSorted(rows.map(r => r.sales_rep)),
+    ccSetters: uniqSorted(rows.map(r => r.call_center_appointment_setter)),
+    installers: uniqSorted(rows.map(r => r.company)),
+    statuses: uniqSorted(rows.map(r => r.status)),
+  }), [rows]);
+
+  /* Sorting */
+  function handleSort(idx: number) {
+    if (sortCol === idx) setSortDir(d => d === "asc" ? "desc" : "asc");
+    else { setSortCol(idx); setSortDir("asc"); }
+  }
+
+  const sortedRows = useMemo(() => {
+    if (sortCol === null) return rows;
+    const col = COLUMNS[sortCol];
+    if (!col) return rows;
+    const dir = sortDir === "asc" ? 1 : -1;
+    return [...rows].sort((a, b) => {
+      const av = a[col.key]; const bv = b[col.key];
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
+      return String(av).localeCompare(String(bv)) * dir;
+    });
+  }, [rows, sortCol, sortDir]);
+
+  /* Edit dialog helpers */
+  function openEdit(row: DealRow) {
+    setEditRow(row);
+    setEditDraft({ ...row });
+    setEditMsg(null);
+    setIsNew(false);
+  }
+
+  function openNew() {
+    const blank: Record<string, any> = { id: "" };
+    for (const col of COLUMNS) blank[col.key] = null;
+    setEditRow(blank as DealRow);
+    setEditDraft(blank);
+    setEditMsg(null);
+    setIsNew(true);
+  }
+
+  function setField(key: string, value: string) {
+    setEditDraft(d => ({ ...d, [key]: value === "" ? null : value }));
+  }
+
+  async function saveEdit() {
+    if (!editRow) return;
+    setSaving(true); setEditMsg(null);
+
+    if (isNew) {
+      /* ── INSERT new deal ── */
+      const payload: Record<string, any> = {};
+      for (const col of COLUMNS) {
+        const k = col.key;
+        const val = editDraft[k];
+        if (val != null && val !== "") {
+          payload[k] = (col.type === "money" || col.type === "num") ? Number(val) : val;
+        }
+      }
+      if (!payload.customer_name && !payload.sales_rep) { setEditMsg("At least Customer Name or Sales Rep is required."); setSaving(false); return; }
+      const { error } = await supabase.from("deals").insert(payload);
+      if (error) { setEditMsg(`Error: ${error.message}`); setSaving(false); return; }
+    } else {
+      /* ── UPDATE existing deal ── */
+      const payload: Record<string, any> = {};
+      for (const col of COLUMNS) {
+        const k = col.key;
+        const newVal = editDraft[k];
+        const oldVal = editRow[k];
+        if (newVal !== oldVal) {
+          if (col.type === "money" || col.type === "num") {
+            payload[k] = newVal === null || newVal === "" ? null : Number(newVal);
+          } else {
+            payload[k] = newVal === "" ? null : newVal;
+          }
+        }
+      }
+      if (Object.keys(payload).length === 0) { setEditMsg("No changes."); setSaving(false); return; }
+      const { error } = await supabase.from("deals").update(payload).eq("id", editRow.id);
+      if (error) { setEditMsg(`Error: ${error.message}`); setSaving(false); return; }
+    }
+
+    setEditRow(null); setSaving(false); setIsNew(false); load();
+  }
+
+  function clearAll() { setSalesReps([]); setCcSetters([]); setInstallers([]); setStatuses([]); setCustomerQ(""); setStartDate(""); setEndDate(""); }
+
+  const containerStyle: React.CSSProperties = { height: `calc(100dvh - ${PORTAL_HEADER_PX}px)`, maxHeight: `calc(100dvh - ${PORTAL_HEADER_PX}px)` };
+
+  return (
+    <div className="min-h-0 flex flex-col overflow-hidden bg-slate-50" style={containerStyle}>
+      {/* Sticky top: filters */}
+      <div className="sticky top-0 z-30 bg-slate-50/95 backdrop-blur border-b border-slate-200/60">
+        <div className="p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-base font-semibold text-slate-900">Sales</div>
+              <div className="text-[11px] text-slate-500">Click any row to edit · Filters auto-apply as you type</div>
+            </div>
+            <div className="flex gap-2 items-center">
+              <span className={UI.pill}>{loading ? "Loading…" : `${rows.length} deals`}</span>
+              <button className={UI.buttonGhost} onClick={load}>Refresh</button>
+              <button className={UI.buttonGhost} onClick={clearAll}>Clear Filters</button>
+              <button className={UI.buttonPrimary} onClick={openNew}>+ Add Deal</button>
+            </div>
+          </div>
+
+          {msg && <div className="rounded-lg border border-amber-200/70 bg-amber-50/70 text-amber-900 px-3 py-2 text-xs">{msg}</div>}
+
+          <div className={`${UI.card} p-3`}>
+            <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-3">
+              <div>
+                <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Customer Name</div>
+                <input className={UI.control} value={customerQ} onChange={e => setCustomerQ(e.target.value)} placeholder="Search…" />
+              </div>
+              <MultiSelect label="Sales Rep" options={options.salesReps} selected={salesReps} onChange={setSalesReps} />
+              <MultiSelect label="CC Setter" options={options.ccSetters} selected={ccSetters} onChange={setCcSetters} />
+              <MultiSelect label="Installer" options={options.installers} selected={installers} onChange={setInstallers} />
+              <MultiSelect label="Status" options={options.statuses} selected={statuses} onChange={setStatuses} />
+              <div>
+                <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Start Date</div>
+                <input type="date" className={UI.control} value={startDate} onChange={e => setStartDate(e.target.value)} />
+              </div>
+              <div>
+                <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">End Date</div>
+                <input type="date" className={UI.control} value={endDate} onChange={e => setEndDate(e.target.value)} />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="flex-1 min-h-0 px-4 pb-2">
+        <div className={`${UI.card} h-full overflow-auto`}>
+          <table className="min-w-[5000px] w-full text-xs">
+            <thead className="sticky top-0 z-10 bg-white/95 backdrop-blur border-b border-slate-200/60">
+              <tr className="text-left text-slate-700">
+                {COLUMNS.map((col, i) => (
+                  <th key={col.key} onClick={() => handleSort(i)}
+                    className={`px-2.5 py-2 whitespace-nowrap border-r border-slate-200/60 font-semibold cursor-pointer select-none hover:bg-slate-100/80 transition-colors ${i === COLUMNS.length - 1 ? "border-r-0" : ""} ${col.type === "money" || col.type === "num" ? "text-right" : ""}`}>
+                    <span className="inline-flex items-center gap-1">
+                      {col.label}
+                      {sortCol === i ? <span className="text-[10px]">{sortDir === "asc" ? "▲" : "▼"}</span> : <span className="text-[10px] text-slate-300">⇅</span>}
+                    </span>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr><td className="px-3 py-8 text-slate-400 text-center" colSpan={COLUMNS.length}>Loading deals…</td></tr>
+              ) : sortedRows.length === 0 ? (
+                <tr><td className="px-3 py-8 text-slate-400 text-center" colSpan={COLUMNS.length}>No results.</td></tr>
+              ) : (
+                sortedRows.map(r => (
+                  <tr key={r.id} onClick={() => openEdit(r)} className="border-b border-slate-200/40 hover:bg-indigo-50/40 cursor-pointer transition-colors">
+                    {COLUMNS.map(col => (
+                      <td key={col.key} className={`px-2.5 py-2 whitespace-nowrap border-r border-slate-200/40 ${col.type === "money" || col.type === "num" ? "text-right tabular-nums" : ""} ${col.key === "notes" ? "max-w-[200px] truncate" : ""}`} title={col.key === "notes" ? String(r.notes ?? "") : undefined}>
+                        {cellVal(r, col)}
+                      </td>
+                    ))}
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Edit Dialog */}
+      {editRow && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => { setEditRow(null); setIsNew(false); }}>
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl mx-4 max-h-[85vh] flex flex-col" onClick={ev => ev.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 flex-shrink-0">
+              <div>
+                <div className="text-sm font-semibold text-slate-800">{isNew ? "New Deal" : "Edit Deal"}</div>
+                <div className="text-[10px] text-slate-400">{isNew ? "Fill in the fields below to create a new deal" : `${editDraft.customer_name ?? "Untitled"} · ${editDraft.sales_rep ?? "No rep"} · ID: ${editRow.id.slice(0, 8)}`}</div>
+              </div>
+              <button className="text-slate-400 hover:text-slate-600 text-lg" onClick={() => { setEditRow(null); setIsNew(false); }}>✕</button>
+            </div>
+
+            <div className="overflow-y-auto flex-1 px-5 py-4">
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-3">
+                {COLUMNS.map(col => {
+                  const val = editDraft[col.key];
+                  const displayVal = val == null ? "" : String(val);
+                  return (
+                    <div key={col.key}>
+                      <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block mb-0.5">{col.label}</label>
+                      {col.key === "notes" ? (
+                        <textarea className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-300 resize-none" rows={3}
+                          value={displayVal} onChange={e => setField(col.key, e.target.value)} />
+                      ) : col.type === "date" ? (
+                        <input type="date" className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-300"
+                          value={displayVal ? displayVal.slice(0, 10) : ""} onChange={e => setField(col.key, e.target.value)} />
+                      ) : col.type === "money" || col.type === "num" ? (
+                        <input type="number" step="any" className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm text-right focus:outline-none focus:ring-1 focus:ring-slate-300"
+                          value={displayVal} onChange={e => setField(col.key, e.target.value)} />
+                      ) : (
+                        <input className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-300"
+                          value={displayVal} onChange={e => setField(col.key, e.target.value)} />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between px-5 py-3 border-t border-slate-100 bg-slate-50 rounded-b-xl flex-shrink-0">
+              {editMsg && <div className="text-xs text-amber-600">{editMsg}</div>}
+              {!editMsg && <div />}
+              <div className="flex gap-2">
+                <button className={UI.buttonGhost} onClick={() => { setEditRow(null); setIsNew(false); }}>Cancel</button>
+                <button className={UI.buttonPrimary} onClick={saveEdit} disabled={saving}>{saving ? "Saving…" : isNew ? "Create Deal" : "Save Changes"}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
