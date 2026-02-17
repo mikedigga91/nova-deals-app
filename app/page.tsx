@@ -36,7 +36,7 @@ const MENUS: MenuItem[] = [
 
 export default function FidelioShellPage() {
   const { user, loading, signOut } = useAuth();
-  const [active, setActive] = useState<MenuKey>("spp");
+  const [active, setActive] = useState<MenuKey>("sales");
   const [collapsed, setCollapsed] = useState(false);
   const [mustChangePassword, setMustChangePassword] = useState<boolean | null>(null);
   const [portalUserId, setPortalUserId] = useState<string | null>(null);
