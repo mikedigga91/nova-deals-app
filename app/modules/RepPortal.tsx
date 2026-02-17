@@ -194,8 +194,7 @@ export default function RepPortal() {
 
   const { user } = useAuth();
 
-  /* ─── Agent identity resolution (pre-fills Sales Rep filter) ─── */
-  const [agentName, setAgentName] = useState<string | null>(null);
+  /* ─── Agent identity resolution ─── */
   const [agentLoading, setAgentLoading] = useState(true);
 
   useEffect(() => {
@@ -205,8 +204,7 @@ export default function RepPortal() {
       .select("linked_name")
       .eq("email", user.email)
       .single()
-      .then(({ data }) => {
-        setAgentName(data?.linked_name ?? null);
+      .then(() => {
         setAgentLoading(false);
       });
   }, [user?.email]);
@@ -225,14 +223,7 @@ export default function RepPortal() {
   const [startDate, setStartDate] = useState(DEFAULT_START);
   const [endDate, setEndDate] = useState("");
 
-  /* Pre-fill Sales Rep filter with current agent's name once resolved */
-  const prefilled = useRef(false);
-  useEffect(() => {
-    if (agentName && !prefilled.current) {
-      setSalesReps([agentName]);
-      prefilled.current = true;
-    }
-  }, [agentName]);
+  /* NOTE: removed auto pre-fill of Sales Rep filter – users pick their own filters */
 
   /* ─── Sort ─── */
   const [sortCol, setSortCol] = useState<number | null>(null);
