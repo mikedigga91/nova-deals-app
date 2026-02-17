@@ -91,23 +91,23 @@ export default function FidelioShellPage() {
     <div className="h-screen w-screen bg-gray-100 text-slate-800 flex flex-col overflow-hidden">
 
       {/* ═══ TOP BAR ═══ */}
-      <header className="flex-shrink-0 h-16 flex items-center justify-between px-5 border-b border-slate-200 bg-white shadow-sm z-40">
+      <header className="flex-shrink-0 h-16 flex items-center justify-between px-5 border-b border-slate-900 bg-slate-950 shadow-md z-40">
         <div className="flex items-center gap-3.5">
           <Image src="/logo.png" alt="Nova NRG" width={40} height={40} className="rounded-md" unoptimized priority />
           <div className="leading-tight">
-            <div className="text-[17px] font-bold tracking-wide text-slate-800">NOVA NRG PORTAL</div>
+            <div className="text-[17px] font-bold tracking-wide text-white">NOVA NRG PORTAL</div>
             <div className="text-[10px] text-slate-400 font-medium tracking-wider uppercase">Accounting Workspace</div>
           </div>
         </div>
 
         <div className="flex items-center gap-3">
           <div className="text-[11px] text-slate-400">
-            Active: <span className="text-slate-700 font-semibold">{activeItem.label}</span>
+            Active: <span className="text-white font-semibold">{activeItem.label}</span>
           </div>
           <div className="text-[11px] text-slate-400 truncate max-w-[180px]">
             {user.email}
           </div>
-          <div className="h-7 w-7 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-[11px] text-slate-500 font-semibold">
+          <div className="h-7 w-7 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-[11px] text-slate-300 font-semibold">
             {user.email?.charAt(0).toUpperCase() ?? "U"}
           </div>
         </div>
@@ -118,21 +118,21 @@ export default function FidelioShellPage() {
 
         {/* ═══ SIDEBAR ═══ */}
         <aside
-          className="flex-shrink-0 flex flex-col border-r border-slate-200 bg-white overflow-hidden"
+          className="flex-shrink-0 flex flex-col border-r border-slate-300 bg-slate-200 overflow-hidden"
           style={{
             width: collapsed ? 56 : 240,
             transition: "width 200ms cubic-bezier(0.4, 0, 0.2, 1)",
           }}
         >
           {/* Sidebar header */}
-          <div className="flex-shrink-0 flex items-center h-11 border-b border-slate-200"
+          <div className="flex-shrink-0 flex items-center h-11 border-b border-slate-300"
             style={{ justifyContent: collapsed ? "center" : "space-between", padding: collapsed ? "0" : "0 12px" }}>
             {!collapsed && (
-              <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 overflow-hidden whitespace-nowrap">Navigator</span>
+              <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-500 overflow-hidden whitespace-nowrap">Navigator</span>
             )}
             <button
               onClick={() => setCollapsed(v => !v)}
-              className="flex-shrink-0 w-8 h-8 rounded-md flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+              className="flex-shrink-0 w-8 h-8 rounded-md flex items-center justify-center text-slate-500 hover:text-slate-800 hover:bg-slate-300/60 transition-colors"
               title={collapsed ? "Expand menu" : "Collapse menu"}
               type="button"
             >
@@ -149,7 +149,7 @@ export default function FidelioShellPage() {
                 {/* Group label */}
                 <div className="overflow-hidden whitespace-nowrap h-6 flex items-end px-2 mb-0.5"
                   style={{ opacity: collapsed ? 0 : 1, height: collapsed ? 4 : 24, transition: "opacity 150ms, height 200ms" }}>
-                  <span className="text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400">{group}</span>
+                  <span className="text-[9px] font-bold uppercase tracking-[0.1em] text-slate-500">{group}</span>
                 </div>
 
                 <div className="space-y-0.5">
@@ -165,8 +165,8 @@ export default function FidelioShellPage() {
                           "w-full flex items-center gap-2.5 rounded-lg h-9 text-[13px] font-medium transition-all duration-150 relative",
                           collapsed ? "px-0 justify-center" : "px-2.5 justify-start",
                           isActive
-                            ? "bg-slate-100 text-slate-900 shadow-sm"
-                            : "text-slate-500 hover:text-slate-800 hover:bg-slate-50",
+                            ? "bg-white text-slate-900 shadow-sm"
+                            : "text-slate-600 hover:text-slate-900 hover:bg-slate-300/50",
                         ].join(" ")}
                       >
                         {/* Active indicator bar */}
@@ -175,7 +175,7 @@ export default function FidelioShellPage() {
                         )}
 
                         {/* Icon */}
-                        <span className={`flex-shrink-0 w-6 h-6 rounded-md flex items-center justify-center text-[12px] transition-colors duration-150 ${isActive ? "bg-slate-200/60" : ""}`}>
+                        <span className={`flex-shrink-0 w-6 h-6 rounded-md flex items-center justify-center text-[12px] transition-colors duration-150 ${isActive ? "bg-slate-100" : ""}`}>
                           {it.icon}
                         </span>
 
@@ -199,13 +199,13 @@ export default function FidelioShellPage() {
           </nav>
 
           {/* Sidebar footer */}
-          <div className="flex-shrink-0 border-t border-slate-200 px-2 py-2 overflow-hidden whitespace-nowrap space-y-1.5">
+          <div className="flex-shrink-0 border-t border-slate-300 px-2 py-2 overflow-hidden whitespace-nowrap space-y-1.5">
             <button
               onClick={signOut}
               title="Sign out"
               type="button"
               className={[
-                "w-full flex items-center gap-2.5 rounded-lg h-9 text-[13px] font-medium text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors",
+                "w-full flex items-center gap-2.5 rounded-lg h-9 text-[13px] font-medium text-slate-500 hover:text-red-600 hover:bg-red-50 transition-colors",
                 collapsed ? "px-0 justify-center" : "px-2.5 justify-start",
               ].join(" ")}
             >
@@ -221,7 +221,7 @@ export default function FidelioShellPage() {
               </span>
             </button>
             <div style={{ opacity: collapsed ? 0 : 1, transition: "opacity 150ms" }}>
-              <div className="text-[9px] text-slate-300 leading-tight px-2.5">Nova NRG Portal v2.0</div>
+              <div className="text-[9px] text-slate-400 leading-tight px-2.5">Nova NRG Portal v2.0</div>
             </div>
           </div>
         </aside>
