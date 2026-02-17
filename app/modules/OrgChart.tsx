@@ -37,6 +37,8 @@ type LayoutNode = {
   parentX: number | null;
   parentY: number | null;
   depth: number;
+  cardW: number;   // per-node width  (CEO is larger)
+  cardH: number;   // per-node height (CEO is larger)
 };
 
 /* Dept config types (optional tables) */
@@ -45,15 +47,18 @@ type OrgRole = { id: string; department_name: string; role_name: string; sort_or
 
 /* ═══════════════════ CONSTANTS ═══════════════════ */
 
-const CARD_W = 264;
-const CARD_H = 164;
-const H_GAP = 48;
-const V_GAP = 96;
+const CARD_W = 264;               // Standard card width
+const CARD_H = 164;               // Standard card height
 
-/* ── Hybrid layout thresholds ── */
-const MAX_HORIZONTAL_CHILDREN = 3;   // switch to vertical stack when > this
-const VERTICAL_STACK_GAP = 24;       // compact gap for stacked children
-const DEPTH_FORCE_VERTICAL = 3;      // at this depth, always stack vertically
+/* ── CEO card is slightly larger ── */
+const CEO_CARD_W = CARD_W + 40;   // 304px — wider for the root/CEO card
+const CEO_CARD_H = CARD_H + 20;   // 184px — taller for the root/CEO card
+
+/* ── Layout spacing (tweak these to adjust spacing) ── */
+const SIBLING_GAP_X = 56;         // Horizontal gap between level-1 sibling columns
+const STACK_GAP_Y   = 28;         // Vertical gap between stacked sub-cards (depth ≥ 2)
+const STACK_INDENT_X = 0;         // Optional horizontal indent of vertical stack under parent (0 = centered)
+const V_GAP = 72;                 // Vertical gap between a parent and the first row of children
 
 /* Department hex colors for card styling */
 type DeptHexColor = { bar: string; barText: string; cardBg: string; cardBorder: string };
@@ -348,86 +353,115 @@ function buildTree(employees: Employee[], collapsedSet: Set<string>, filterDept:
   return roots[0];
 }
 
-/* ── Hybrid layout: decide if a node's children should be horizontal or vertical ── */
-function shouldStackVertically(node: TreeNode, depth: number): boolean {
-  if (depth >= DEPTH_FORCE_VERTICAL) return true;
-  if (node.children.length > MAX_HORIZONTAL_CHILDREN) return true;
-  return false;
+/*
+ * ══════════════════════════════════════════════════════════════════
+ *  LAYOUT ALGORITHM — "Horizontal siblings, vertical stacks"
+ *
+ *  • Level 0 (CEO/root): single centered card, uses CEO_CARD_W / CEO_CARD_H
+ *  • Level 1 (direct reports): arranged HORIZONTALLY side-by-side
+ *  • Level ≥ 2 (all deeper descendants): stacked VERTICALLY in a
+ *    single column beneath their parent — saves horizontal space
+ *
+ *  Each level-1 node "owns" a vertical column whose width = CARD_W
+ *  (+ padding) and whose height grows with the number of stacked
+ *  descendants.  Connector lines use orthogonal right-angle paths.
+ * ══════════════════════════════════════════════════════════════════
+ */
+
+/** Card dimensions for a given depth (CEO = depth 0 gets the big card) */
+function cardSize(depth: number): { w: number; h: number } {
+  return depth === 0
+    ? { w: CEO_CARD_W, h: CEO_CARD_H }
+    : { w: CARD_W, h: CARD_H };
 }
 
+/**
+ * Compute the width each column/subtree needs.
+ * • depth 0 (CEO): width = sum of children column widths + gaps (horizontal)
+ * • depth 1 (direct reports): each is a column — width = max(CARD_W, widest descendant subtree)
+ * • depth ≥ 2: vertical stack — width = max(CARD_W, widest child subtree)
+ */
 function computeSubtreeWidths(node: TreeNode, depth: number = 0): number {
+  const { w } = cardSize(depth);
+
   if (node.children.length === 0) {
-    node.subtreeWidth = CARD_W;
-    return CARD_W;
+    node.subtreeWidth = w;
+    return w;
   }
 
-  if (shouldStackVertically(node, depth)) {
-    // Vertical stack: width is max child subtree width, shifted right of parent
-    let maxChildW = 0;
-    for (const child of node.children) {
-      maxChildW = Math.max(maxChildW, computeSubtreeWidths(child, depth + 1));
-    }
-    // Parent card + indent + widest child
-    node.subtreeWidth = Math.max(CARD_W, CARD_W * 0.4 + maxChildW);
+  if (depth === 0) {
+    // CEO: children are horizontal, so sum their widths + gaps
+    let total = 0;
+    for (const child of node.children) total += computeSubtreeWidths(child, depth + 1);
+    total += (node.children.length - 1) * SIBLING_GAP_X;
+    node.subtreeWidth = Math.max(w, total);
     return node.subtreeWidth;
   }
 
-  // Horizontal: sum children widths + gaps
-  let total = 0;
-  for (const child of node.children) total += computeSubtreeWidths(child, depth + 1);
-  total += (node.children.length - 1) * H_GAP;
-  node.subtreeWidth = Math.max(CARD_W, total);
+  // depth ≥ 1: vertical stack — column width = widest child subtree
+  let maxChildW = 0;
+  for (const child of node.children) {
+    maxChildW = Math.max(maxChildW, computeSubtreeWidths(child, depth + 1));
+  }
+  node.subtreeWidth = Math.max(w, maxChildW + STACK_INDENT_X);
   return node.subtreeWidth;
 }
 
+/**
+ * Position every node (x, y) after subtreeWidths have been computed.
+ * • depth 0: centred in its subtree
+ * • depth 1 (children of CEO): spread horizontally, each centred in its column
+ * • depth ≥ 2: stacked vertically under their parent, centred in the column
+ */
 function positionNodes(node: TreeNode, x: number, y: number, depth: number = 0): void {
-  node.x = x + node.subtreeWidth / 2 - CARD_W / 2;
+  const { w, h } = cardSize(depth);
+
+  // Centre this node within its subtree width
+  node.x = x + node.subtreeWidth / 2 - w / 2;
   node.y = y;
 
   if (node.children.length === 0) return;
 
-  if (shouldStackVertically(node, depth)) {
-    // Stack children vertically, indented to the right of parent center
-    const indent = CARD_W * 0.4;
-    let childY = y + CARD_H + V_GAP;
-    for (const child of node.children) {
-      positionNodes(child, x + indent, childY, depth + 1);
-      // Height of this child's subtree needs to be estimated
-      const childSubHeight = getSubtreeHeight(child, depth + 1);
-      childY += childSubHeight + VERTICAL_STACK_GAP;
-    }
-  } else {
-    // Horizontal layout
+  if (depth === 0) {
+    // CEO's children: lay them out horizontally
     let childX = x;
     for (const child of node.children) {
-      positionNodes(child, childX, y + CARD_H + V_GAP, depth + 1);
-      childX += child.subtreeWidth + H_GAP;
+      positionNodes(child, childX, y + h + V_GAP, depth + 1);
+      childX += child.subtreeWidth + SIBLING_GAP_X;
+    }
+  } else {
+    // depth ≥ 1: stack children vertically
+    let childY = y + h + V_GAP;
+    for (const child of node.children) {
+      // Centre child in the parent's subtree width, optionally indented
+      positionNodes(child, x + STACK_INDENT_X, childY, depth + 1);
+      const childTotalH = getSubtreeHeight(child, depth + 1);
+      childY += childTotalH + STACK_GAP_Y;
     }
   }
 }
 
-/** Estimate the pixel height of a subtree (for vertical stacking spacing) */
+/** Total pixel height of a subtree (used for vertical stack spacing) */
 function getSubtreeHeight(node: TreeNode, depth: number): number {
-  if (node.children.length === 0) return CARD_H;
+  const { h } = cardSize(depth);
+  if (node.children.length === 0) return h;
 
-  if (shouldStackVertically(node, depth)) {
-    let h = CARD_H + V_GAP;
-    for (let i = 0; i < node.children.length; i++) {
-      h += getSubtreeHeight(node.children[i], depth + 1);
-      if (i < node.children.length - 1) h += VERTICAL_STACK_GAP;
-    }
-    return h;
+  // All children are stacked vertically (depth ≥ 1)
+  let childrenH = 0;
+  for (let i = 0; i < node.children.length; i++) {
+    childrenH += getSubtreeHeight(node.children[i], depth + 1);
+    if (i < node.children.length - 1) childrenH += STACK_GAP_Y;
   }
-
-  // Horizontal: max child height
-  let maxChildH = 0;
-  for (const child of node.children) {
-    maxChildH = Math.max(maxChildH, getSubtreeHeight(child, depth + 1));
-  }
-  return CARD_H + V_GAP + maxChildH;
+  return h + V_GAP + childrenH;
 }
 
+/**
+ * Flatten the positioned tree into a flat LayoutNode[] for rendering.
+ * Each node carries its own cardW/cardH so the renderer can size
+ * it correctly (CEO vs everyone else).
+ */
 function flattenTree(node: TreeNode, parentX: number | null, parentY: number | null, depth: number): LayoutNode[] {
+  const { w, h } = cardSize(depth);
   const result: LayoutNode[] = [{
     employee: node.employee,
     x: node.x,
@@ -435,9 +469,11 @@ function flattenTree(node: TreeNode, parentX: number | null, parentY: number | n
     parentX,
     parentY,
     depth,
+    cardW: w,
+    cardH: h,
   }];
   for (const child of node.children) {
-    result.push(...flattenTree(child, node.x + CARD_W / 2, node.y + CARD_H, depth + 1));
+    result.push(...flattenTree(child, node.x + w / 2, node.y + h, depth + 1));
   }
   return result;
 }
@@ -451,8 +487,8 @@ function layoutTree(employees: Employee[], collapsedSet: Set<string>, filterDept
 
   let maxX = 0, maxY = 0;
   for (const n of nodes) {
-    if (n.x + CARD_W > maxX) maxX = n.x + CARD_W;
-    if (n.y + CARD_H > maxY) maxY = n.y + CARD_H;
+    if (n.x + n.cardW > maxX) maxX = n.x + n.cardW;
+    if (n.y + n.cardH > maxY) maxY = n.y + n.cardH;
   }
   return { nodes, width: maxX + 80, height: maxY + 80 };
 }
@@ -661,8 +697,8 @@ export default function OrgChart() {
       const target = recalc.nodes.find(n => n.employee.id === empId);
       if (target && containerRef.current) {
         const rect = containerRef.current.getBoundingClientRect();
-        const scrollX = (target.x + CARD_W / 2) * zoom - rect.width / 2;
-        const scrollY = (target.y + CARD_H / 2) * zoom - rect.height / 2;
+        const scrollX = (target.x + target.cardW / 2) * zoom - rect.width / 2;
+        const scrollY = (target.y + target.cardH / 2) * zoom - rect.height / 2;
         containerRef.current.scrollTo({ left: Math.max(0, scrollX), top: Math.max(0, scrollY), behavior: "smooth" });
       }
     }, 50);
@@ -1195,7 +1231,7 @@ export default function OrgChart() {
         ctx.setLineDash([6, 3]);
         const sx = node.parentX;
         const sy = node.parentY;
-        const ex = node.x + CARD_W / 2;
+        const ex = node.x + node.cardW / 2;
         const ey = node.y;
         const midY = sy + (ey - sy) / 2;
         ctx.moveTo(sx, sy);
@@ -1205,48 +1241,49 @@ export default function OrgChart() {
         ctx.stroke();
       }
     }
+    ctx.setLineDash([]); // reset dash for card rendering
 
     for (const node of nodes) {
-      const { x, y, employee: emp, depth } = node;
+      const { x, y, employee: emp, depth, cardW: cw, cardH: ch } = node;
       const dc = getCardColor(emp.department, emp.id);
       const ds = getDepthStyle(depth);
 
       ctx.fillStyle = "rgba(0,0,0,0.06)";
-      roundRect(ctx, x + 2, y + 2, CARD_W, CARD_H, 8);
+      roundRect(ctx, x + 2, y + 2, cw, ch, 8);
       ctx.fill();
 
       ctx.fillStyle = dc.cardBg;
       ctx.strokeStyle = dc.cardBorder;
       ctx.lineWidth = 1;
-      roundRect(ctx, x, y, CARD_W, CARD_H, 8);
+      roundRect(ctx, x, y, cw, ch, 8);
       ctx.fill();
       ctx.stroke();
 
       // Left accent border
       ctx.fillStyle = dc.cardBorder;
-      ctx.fillRect(x, y + 8, ds.borderWidth, CARD_H - 16);
+      ctx.fillRect(x, y + 8, ds.borderWidth, ch - 16);
 
       ctx.fillStyle = dc.bar;
-      roundRect(ctx, x, y, CARD_W, 30, 8);
+      roundRect(ctx, x, y, cw, 30, 8);
       ctx.fill();
-      ctx.fillRect(x, y + 20, CARD_W, 10);
+      ctx.fillRect(x, y + 20, cw, 10);
 
       ctx.fillStyle = dc.barText;
       ctx.font = "bold 12px system-ui, sans-serif";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText(emp.position || emp.department, x + CARD_W / 2, y + 15);
+      ctx.fillText(emp.position || emp.department, x + cw / 2, y + 15);
 
       ctx.fillStyle = "#1f2937";
       ctx.font = "italic 12px system-ui, sans-serif";
-      ctx.fillText(emp.full_name, x + CARD_W / 2, y + 56, CARD_W - 70);
+      ctx.fillText(emp.full_name, x + cw / 2, y + 56, cw - 70);
 
       ctx.fillStyle = "#6b7280";
       ctx.font = "11px system-ui, sans-serif";
-      ctx.fillText(emp.phone || "", x + CARD_W / 2, y + 76, CARD_W - 70);
+      ctx.fillText(emp.phone || "", x + cw / 2, y + 76, cw - 70);
 
       ctx.fillStyle = "#6b7280";
-      ctx.fillText(emp.email || "", x + CARD_W / 2, y + 96, CARD_W - 70);
+      ctx.fillText(emp.email || "", x + cw / 2, y + 96, cw - 70);
 
       const avatarX = x + 38;
       const avatarY = y + 88;
@@ -1592,7 +1629,7 @@ export default function OrgChart() {
                 if (node.parentX == null || node.parentY == null) return null;
                 const sx = node.parentX;
                 const sy = node.parentY;
-                const ex = node.x + CARD_W / 2;
+                const ex = node.x + node.cardW / 2;
                 const ey = node.y;
                 const midY = sy + (ey - sy) / 2;
                 return (
@@ -1627,8 +1664,8 @@ export default function OrgChart() {
                     position: "absolute",
                     left: node.x,
                     top: node.y,
-                    width: CARD_W,
-                    height: CARD_H,
+                    width: node.cardW,
+                    height: node.cardH,
                   }}
                   className={`group transition-all duration-200 hover:-translate-y-0.5 ${isDragging ? "opacity-40" : ""}`}
                 >
