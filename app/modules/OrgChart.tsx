@@ -406,7 +406,10 @@ function cardSize(depth: number): { w: number; h: number } {
 /**
  * Compute the width each column/subtree needs.
  *  - depth 0 (CEO): children are horizontal → sum of children widths + gaps
- *  - depth ≥ 1: children stacked vertically → width = widest descendant + spine offset
+ *  - depth ≥ 1: children stacked vertically → parent card width/2 + gap + widest child subtree
+ *
+ * For vertical stacks the spine drops straight from parent centre, so
+ * children sit to the right: parentW/2 + SPINE_OFFSET_X + childSubtreeW
  */
 function computeSubtreeWidths(node: TreeNode, depth: number = 0): number {
   const { w } = cardSize(depth);
@@ -425,13 +428,15 @@ function computeSubtreeWidths(node: TreeNode, depth: number = 0): number {
     return node.subtreeWidth;
   }
 
-  // depth ≥ 1 → vertical stack.  Column must fit the spine offset + widest child subtree
+  // depth ≥ 1 → vertical stack
+  // Children sit to the right of parent's centre + a small gap
   let maxChildW = 0;
   for (const child of node.children) {
     maxChildW = Math.max(maxChildW, computeSubtreeWidths(child, depth + 1));
   }
-  // The column needs: spine offset + child cards, plus the parent card itself
-  node.subtreeWidth = Math.max(w, SPINE_OFFSET_X + maxChildW);
+  // Need: left half of parent + spine gap + widest child
+  const rightSide = SPINE_OFFSET_X + maxChildW;
+  node.subtreeWidth = Math.max(w, w / 2 + rightSide);
   return node.subtreeWidth;
 }
 
@@ -458,11 +463,13 @@ function positionNodes(node: TreeNode, x: number, y: number, depth: number = 0):
       childX += child.subtreeWidth + SIBLING_GAP_X;
     }
   } else {
-    // Vertical stack for depth ≥ 1 children
-    // Cards are placed after a spine offset from the left edge of the subtree band
+    // Vertical stack — children placed to the RIGHT of parent's centre
+    // Spine line will drop straight down from node.x + w/2
+    const spineX = node.x + w / 2;
+    const childStartX = spineX + SPINE_OFFSET_X;
     let childY = y + h + V_GAP;
     for (const child of node.children) {
-      positionNodes(child, x + SPINE_OFFSET_X, childY, depth + 1);
+      positionNodes(child, childStartX, childY, depth + 1);
       const subtreeH = getSubtreeHeight(child, depth + 1);
       childY += subtreeH + STACK_GAP_Y;
     }
@@ -1285,15 +1292,14 @@ export default function OrgChart() {
     const ctx = canvas.getContext("2d")!;
     ctx.scale(scale, scale);
 
-    // Corkboard background
-    ctx.fillStyle = "#c8a882";
+    // Powder blue background
+    ctx.fillStyle = "#dbeafe";
     ctx.fillRect(0, 0, treeWidth, treeHeight);
 
-    // Draw connectors using the same logic as the SVG renderer
-    ctx.strokeStyle = "#8b7355";
-    ctx.lineWidth = 1.5;
-    ctx.setLineDash([6, 3]);
-    ctx.globalAlpha = 0.6;
+    // Draw connectors — solid lines matching SVG renderer
+    ctx.strokeStyle = "#64748b";
+    ctx.lineWidth = 2;
+    ctx.setLineDash([]);
     for (const group of connectors) {
       if (group.style === "bus") {
         const firstChild = group.children[0];
@@ -1307,15 +1313,11 @@ export default function OrgChart() {
           ctx.beginPath(); ctx.moveTo(child.cx, midY); ctx.lineTo(child.cx, child.cy); ctx.stroke();
         }
       } else {
-        const spineX = group.children[0].cx - group.children[0].cardW / 2 - SPINE_OFFSET_X;
-        const firstStubY = group.children[0].cy + group.children[0].cardH / 2;
-        const lastStubY = group.children[group.children.length - 1].cy + group.children[group.children.length - 1].cardH / 2;
-        ctx.beginPath();
-        ctx.moveTo(group.px, group.py); ctx.lineTo(group.px, group.py + 16);
-        ctx.lineTo(spineX, group.py + 16); ctx.lineTo(spineX, firstStubY); ctx.stroke();
-        if (group.children.length > 1) {
-          ctx.beginPath(); ctx.moveTo(spineX, firstStubY); ctx.lineTo(spineX, lastStubY); ctx.stroke();
-        }
+        // Spine: straight vertical line from parent centre, horizontal stubs to children
+        const spineX = group.px;
+        const lastChild = group.children[group.children.length - 1];
+        const lastStubY = lastChild.cy + lastChild.cardH / 2;
+        ctx.beginPath(); ctx.moveTo(spineX, group.py); ctx.lineTo(spineX, lastStubY); ctx.stroke();
         for (const child of group.children) {
           const stubY = child.cy + child.cardH / 2;
           const cardLeft = child.cx - child.cardW / 2;
@@ -1323,8 +1325,6 @@ export default function OrgChart() {
         }
       }
     }
-    ctx.globalAlpha = 1.0;
-    ctx.setLineDash([]);
 
     for (const node of nodes) {
       const { x, y, employee: emp, depth, cardW: cw, cardH: ch } = node;
@@ -1672,15 +1672,10 @@ export default function OrgChart() {
           ref={containerRef}
           className="flex-1 overflow-auto relative select-none"
           style={{
-            /* Corkboard / bulletin board texture */
-            backgroundColor: "#c8a882",
-            backgroundImage: `
-              radial-gradient(ellipse at 20% 50%, rgba(210,175,130,0.5) 0%, transparent 50%),
-              radial-gradient(ellipse at 80% 20%, rgba(190,155,110,0.4) 0%, transparent 50%),
-              radial-gradient(ellipse at 50% 80%, rgba(180,145,100,0.3) 0%, transparent 50%),
-              url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='60' height='60' filter='url(%23n)' opacity='0.08'/%3E%3C/svg%3E")
-            `,
-            boxShadow: "inset 0 2px 12px rgba(0,0,0,0.15)",
+            /* Powder blue background */
+            backgroundColor: "#dbeafe",
+            backgroundImage: "radial-gradient(circle, #bfdbfe 0.6px, transparent 0.6px)",
+            backgroundSize: "28px 28px",
           }}
           onWheel={handleWheel}
         >
@@ -1706,28 +1701,25 @@ export default function OrgChart() {
               left: 0,
             }}
           >
-            {/* Connector lines */}
+            {/* Connector lines — solid, visible */}
             <svg style={{ position: "absolute", top: 0, left: 0, width: treeWidth, height: treeHeight, pointerEvents: "none" }}>
               {connectors.map(group => {
-                const lnProps = { fill: "none", stroke: "#8b7355", strokeWidth: 1.5, strokeDasharray: "6 3", opacity: 0.6 };
+                const lnProps = { fill: "none", stroke: "#64748b", strokeWidth: 2 };
 
                 if (group.style === "bus") {
                   /*
                    * Bus connector (CEO → level-1):
-                   *   parent-bottom → down to midY → horizontal bar spanning all children → drop to each child top
+                   *   parent-bottom → down to midY → horizontal bar → drop to each child top
                    */
                   const firstChild = group.children[0];
                   const lastChild = group.children[group.children.length - 1];
                   const midY = group.py + (firstChild.cy - group.py) / 2;
                   return (
                     <g key={`bus-${group.parentId}`}>
-                      {/* Vertical stem from parent bottom to bus bar */}
                       <line x1={group.px} y1={group.py} x2={group.px} y2={midY} {...lnProps} />
-                      {/* Horizontal bus bar */}
                       {group.children.length > 1 && (
                         <line x1={firstChild.cx} y1={midY} x2={lastChild.cx} y2={midY} {...lnProps} />
                       )}
-                      {/* Vertical drops from bus bar to each child */}
                       {group.children.map(child => (
                         <line key={`drop-${child.id}`} x1={child.cx} y1={midY} x2={child.cx} y2={child.cy} {...lnProps} />
                       ))}
@@ -1737,30 +1729,26 @@ export default function OrgChart() {
 
                 /*
                  * Spine connector (vertical stack):
-                 *   Parent-bottom → down to spine-x → vertical rail alongside stacked children
-                 *   At each child: horizontal stub from spine to child's left edge
+                 *   Straight vertical line drops from parent bottom-centre.
+                 *   At each child level a horizontal stub branches to the child's left edge.
                  *
                  *   ┌──Parent──┐
                  *   └────┬─────┘
                  *        │
-                 *     ┌──┤  ← spine sits at child.cx - SPINE_OFFSET_X
-                 *     │ Child1│
-                 *     ├──┤
-                 *     │ Child2│
-                 *     └──┘
+                 *        ├──── Child1
+                 *        │
+                 *        ├──── Child2
+                 *        │
+                 *        └──── Child3
                  */
-                const spineX = group.children[0].cx - group.children[0].cardW / 2 - SPINE_OFFSET_X;
-                const firstStubY = group.children[0].cy + group.children[0].cardH / 2;
-                const lastStubY = group.children[group.children.length - 1].cy + group.children[group.children.length - 1].cardH / 2;
+                const spineX = group.px; // straight down from parent centre
+                const lastChild = group.children[group.children.length - 1];
+                const lastStubY = lastChild.cy + lastChild.cardH / 2;
 
                 return (
                   <g key={`spine-${group.parentId}`}>
-                    {/* Vertical drop from parent bottom-centre down to spine start */}
-                    <path d={`M ${group.px} ${group.py} L ${group.px} ${group.py + 16} L ${spineX} ${group.py + 16} L ${spineX} ${firstStubY}`} {...lnProps} />
-                    {/* Vertical spine rail from first child to last child */}
-                    {group.children.length > 1 && (
-                      <line x1={spineX} y1={firstStubY} x2={spineX} y2={lastStubY} {...lnProps} />
-                    )}
+                    {/* Vertical spine: parent bottom → down to last child's mid-height */}
+                    <line x1={spineX} y1={group.py} x2={spineX} y2={lastStubY} {...lnProps} />
                     {/* Horizontal stubs from spine to each child's left edge */}
                     {group.children.map(child => {
                       const stubY = child.cy + child.cardH / 2;
@@ -1836,22 +1824,10 @@ export default function OrgChart() {
                     onDrop={onDropMakeChild(emp)}
                   />
 
-                  {/* ── Pin dot (top center of card) ── */}
-                  <div
-                    className="absolute top-[-6px] left-1/2 -translate-x-1/2 z-50 pointer-events-none"
-                    style={{
-                      width: 14,
-                      height: 14,
-                      borderRadius: "50%",
-                      background: `radial-gradient(circle at 40% 35%, #ff6b6b, #cc3333)`,
-                      boxShadow: "0 2px 4px rgba(0,0,0,0.3), inset 0 1px 2px rgba(255,255,255,0.3)",
-                    }}
-                  />
-
-                  {/* ── Card visual (paper feel) ── */}
+                  {/* ── Card visual ── */}
                   <div
                     className={`
-                      w-full h-full rounded-lg overflow-hidden
+                      w-full h-full rounded-xl overflow-hidden
                       transition-all duration-200
                       ${isHighlighted ? "ring-2 ring-blue-500 ring-offset-2" : ""}
                       ${isDropChild ? "ring-2 ring-blue-400 ring-offset-1" : ""}
@@ -1862,8 +1838,7 @@ export default function OrgChart() {
                       borderRight: `1px solid ${dc.cardBorder}66`,
                       borderBottom: `1px solid ${dc.cardBorder}66`,
                       borderLeft: `${ds.borderWidth}px solid ${dc.cardBorder}`,
-                      boxShadow: `${ds.shadow}, 2px 3px 8px rgba(0,0,0,0.12)`,
-                      transform: `rotate(${(hashStr(emp.id) % 5 - 2) * 0.4}deg)`,
+                      boxShadow: ds.shadow,
                     }}
                     onClick={() => { setEditEmp({ ...emp }); setEditEmpColor(customEmpColors[emp.id] || null); }}
                   >
