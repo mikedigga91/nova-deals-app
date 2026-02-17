@@ -460,7 +460,7 @@ export default function Sales() {
   const containerStyle: React.CSSProperties = { height: `calc(100dvh - ${PORTAL_HEADER_PX}px)`, maxHeight: `calc(100dvh - ${PORTAL_HEADER_PX}px)` };
 
   return (
-    <div className="min-h-0 flex flex-col overflow-hidden bg-slate-50 p-4" style={containerStyle}>
+    <div className="min-h-0 flex flex-col overflow-hidden bg-slate-200/60 p-4" style={containerStyle}>
       <div className="flex-1 min-h-0 flex flex-col bg-white rounded-xl border border-slate-200/60 shadow-sm overflow-hidden">
       {/* Sticky top: filters */}
       <div className="sticky top-0 z-30 bg-white/95 backdrop-blur border-b border-slate-200/60">
