@@ -81,18 +81,10 @@ const MILESTONES: { key: keyof DealRow; short: string }[] = [
   { key: "paid_date",                  short: "Paid" },
 ];
 
-function getCurrentStage(row: DealRow): string {
-  let current = "Not Started";
-  for (const m of MILESTONES) {
-    if (row[m.key]) current = m.short;
-  }
-  return current;
-}
-
 /* ─── Column definitions with collapsible group support ─── */
 type ColDef = {
   label: string;
-  key: keyof DealRow | "__current_stage";
+  key: keyof DealRow | "__progress" | "__milestones";
   type: "text" | "money" | "num" | "date";
   group?: string;        // child of this group (hidden when collapsed)
   groupParent?: string;  // this col is the toggle for this group
@@ -150,9 +142,8 @@ const ALL_COLUMNS: ColDef[] = [
   { label: "Agent Fee Amt",       key: "agent_fee_amount",               type: "money", group: "agent_pay" },
   { label: "Agent After Fee",     key: "agent_rev_after_fee_amount",     type: "money", group: "agent_pay" },
 
-  /* ── Status + Computed Stage ── */
+  /* ── Status ── */
   { label: "Status",        key: "status",           type: "text" },
-  { label: "Current Stage", key: "__current_stage",   type: "text", computed: true },
 
   /* ── NRG Customer Adders (toggleable via toolbar) ── */
   { label: "NRG Customer Adders", key: "nova_nrg_customer_adders", type: "money", group: "nrg_adders" },
@@ -169,13 +160,10 @@ const ALL_COLUMNS: ColDef[] = [
   { label: "CC Lead",           key: "call_center_lead",             type: "text" },
   { label: "Survey Date",       key: "site_survey_date_completed",   type: "date" },
   { label: "Survey Status",     key: "site_survey_status",           type: "text" },
-  { label: "Design Ready",      key: "design_ready_date",            type: "date" },
-  { label: "Permit Submitted",  key: "permit_submitted_date",        type: "date" },
-  { label: "Permit Approved",   key: "permit_approved_date",         type: "date" },
-  { label: "Install 1 (Racks)", key: "install_1_racks_date",         type: "date" },
-  { label: "Install 2 (Panels)",key: "install_2_panel_landed_date",  type: "date" },
-  { label: "PTO",               key: "pto_date",                     type: "date" },
-  { label: "Paid",              key: "paid_date",                    type: "date" },
+
+  /* ── Progress & Milestones (computed — replaces individual milestone date cols) ── */
+  { label: "Progress",   key: "__progress" as keyof DealRow,   type: "text", computed: true },
+  { label: "Milestones", key: "__milestones" as keyof DealRow,  type: "text", computed: true },
 ];
 
 /* DB-backed columns only (for edit dialog & save logic) */
@@ -185,8 +173,25 @@ const EDIT_COLUMNS = ALL_COLUMNS.filter(col => !col.computed);
 function money(n: number | null | undefined) { if (n == null) return ""; return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(Number(n)); }
 function numFmt(n: number | null | undefined, d = 2) { if (n == null) return ""; const v = Number(n); return Number.isNaN(v) ? "" : v.toFixed(d); }
 function fmtDate(iso: string | null | undefined) { if (!iso) return ""; const p = iso.slice(0, 10).split("-"); return p.length < 3 ? iso : `${p[1]}/${p[2]}/${p[0].slice(-2)}`; }
+function progressColor(pct: number): string {
+  if (pct >= 88) return "text-emerald-600";
+  if (pct >= 50) return "text-amber-600";
+  if (pct >= 25) return "text-orange-500";
+  return "text-slate-400";
+}
+function progressBg(pct: number): string {
+  if (pct >= 88) return "bg-emerald-500";
+  if (pct >= 50) return "bg-amber-500";
+  if (pct >= 25) return "bg-orange-400";
+  return "bg-slate-300";
+}
+function getProgress(row: DealRow): { completed: number; total: number; pct: number } {
+  let completed = 0;
+  for (const m of MILESTONES) { if (row[m.key]) completed++; }
+  return { completed, total: 8, pct: Math.round((completed / 8) * 100) };
+}
 function cellVal(row: DealRow, col: ColDef): string {
-  if (col.computed && col.key === "__current_stage") return getCurrentStage(row);
+  if (col.computed) return ""; // Progress & Milestones render custom JSX, not text
   const v = row[col.key as keyof DealRow];
   if (v == null) return "";
   if (col.type === "money") return money(v as number);
@@ -362,7 +367,8 @@ export default function Sales() {
     if (sortKey === null) return rows;
 
     /* Computed: sort by milestone completion count */
-    if (sortKey === "__current_stage") {
+    /* Sort by progress or milestones — both use milestone completion count */
+    if (sortKey === "__progress" || sortKey === "__milestones") {
       const dir = sortDir === "asc" ? 1 : -1;
       return [...rows].sort((a, b) => {
         const ac = MILESTONES.filter(m => a[m.key]).length;
@@ -567,15 +573,43 @@ export default function Sales() {
               ) : sortedRows.length === 0 ? (
                 <tr><td className="px-3 py-8 text-slate-400 text-center" colSpan={visibleColumns.length}>No results.</td></tr>
               ) : (
-                sortedRows.map(r => (
+                sortedRows.map(r => {
+                  const prog = getProgress(r);
+                  return (
                   <tr key={r.id} onClick={() => openEdit(r)} className="border-b border-slate-200/40 hover:bg-indigo-50/40 cursor-pointer transition-colors">
-                    {visibleColumns.map(col => (
-                      <td key={col.key} className={`px-2.5 py-2 whitespace-nowrap border-r border-slate-200/40 ${col.type === "money" || col.type === "num" ? "text-right tabular-nums" : ""} ${col.group ? "bg-blue-50/20" : ""}`}>
-                        {cellVal(r, col)}
-                      </td>
-                    ))}
+                    {visibleColumns.map(col => {
+                      /* Progress bar cell */
+                      if (col.key === "__progress") return (
+                        <td key={col.key} className="px-2.5 py-2 border-r border-slate-200/40 text-center">
+                          <div className="flex items-center justify-center gap-1.5">
+                            <div className="w-12 h-1.5 rounded-full bg-slate-200 overflow-hidden">
+                              <div className={`h-full rounded-full ${progressBg(prog.pct)} transition-all`} style={{ width: `${prog.pct}%` }} />
+                            </div>
+                            <span className={`text-[10px] font-bold tabular-nums ${progressColor(prog.pct)}`}>{prog.pct}%</span>
+                          </div>
+                        </td>
+                      );
+                      /* Milestone dots cell */
+                      if (col.key === "__milestones") return (
+                        <td key={col.key} className="px-2.5 py-2 border-r border-slate-200/40">
+                          <div className="flex items-center justify-center gap-1">
+                            {MILESTONES.map(m => (
+                              <div key={m.key} title={`${m.short}: ${r[m.key] ? fmtDate(r[m.key] as string) : "Pending"}`}
+                                className={`w-2 h-2 rounded-full transition-colors ${r[m.key] ? "bg-emerald-500" : "bg-slate-200"}`} />
+                            ))}
+                          </div>
+                        </td>
+                      );
+                      /* Standard cell */
+                      return (
+                        <td key={col.key} className={`px-2.5 py-2 whitespace-nowrap border-r border-slate-200/40 ${col.type === "money" || col.type === "num" ? "text-right tabular-nums" : ""} ${col.group ? "bg-blue-50/20" : ""}`}>
+                          {cellVal(r, col)}
+                        </td>
+                      );
+                    })}
                   </tr>
-                ))
+                  );
+                })
               )}
             </tbody>
           </table>
