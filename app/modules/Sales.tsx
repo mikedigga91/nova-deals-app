@@ -174,15 +174,15 @@ function money(n: number | null | undefined) { if (n == null) return ""; return 
 function numFmt(n: number | null | undefined, d = 2) { if (n == null) return ""; const v = Number(n); return Number.isNaN(v) ? "" : v.toFixed(d); }
 function fmtDate(iso: string | null | undefined) { if (!iso) return ""; const p = iso.slice(0, 10).split("-"); return p.length < 3 ? iso : `${p[1]}/${p[2]}/${p[0].slice(-2)}`; }
 function progressColor(pct: number): string {
-  if (pct >= 88) return "text-emerald-600";
-  if (pct >= 50) return "text-amber-600";
-  if (pct >= 25) return "text-orange-500";
+  if (pct >= 88) return "text-slate-900";
+  if (pct >= 50) return "text-slate-700";
+  if (pct >= 25) return "text-slate-500";
   return "text-slate-400";
 }
 function progressBg(pct: number): string {
-  if (pct >= 88) return "bg-emerald-500";
-  if (pct >= 50) return "bg-amber-500";
-  if (pct >= 25) return "bg-orange-400";
+  if (pct >= 88) return "bg-slate-800";
+  if (pct >= 50) return "bg-slate-500";
+  if (pct >= 25) return "bg-slate-400";
   return "bg-slate-300";
 }
 function getProgress(row: DealRow): { completed: number; total: number; pct: number } {
@@ -460,14 +460,14 @@ export default function Sales() {
   const containerStyle: React.CSSProperties = { height: `calc(100dvh - ${PORTAL_HEADER_PX}px)`, maxHeight: `calc(100dvh - ${PORTAL_HEADER_PX}px)` };
 
   return (
-    <div className="min-h-0 flex flex-col overflow-hidden bg-slate-50 p-4" style={containerStyle}>
+    <div className="min-h-0 flex flex-col overflow-hidden bg-gray-100 p-4" style={containerStyle}>
       <div className="flex-1 min-h-0 flex flex-col bg-white rounded-xl border border-slate-200/60 shadow-sm overflow-hidden">
       {/* Sticky top: filters */}
       <div className="sticky top-0 z-30 bg-white/95 backdrop-blur border-b border-slate-200/60">
         <div className="p-4 space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-emerald-500 to-emerald-700 flex items-center justify-center shadow-sm">
+              <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-slate-600 to-slate-800 flex items-center justify-center shadow-sm">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <line x1="12" y1="1" x2="12" y2="23" /><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
                 </svg>
@@ -480,8 +480,8 @@ export default function Sales() {
             <div className="flex gap-2 items-center">
               {!scopeLoading && effectiveScope !== "all" && (
                 <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-semibold border ${
-                  effectiveScope === "team" ? "border-purple-200 bg-purple-50 text-purple-700" :
-                  effectiveScope === "own" ? "border-blue-200 bg-blue-50 text-blue-700" :
+                  effectiveScope === "team" ? "border-slate-300 bg-slate-100 text-slate-700" :
+                  effectiveScope === "own" ? "border-gray-300 bg-gray-100 text-gray-700" :
                   "border-slate-200 bg-slate-50 text-slate-500"
                 }`}>
                   {effectiveScope === "team" ? "Showing: Your team's deals" :
@@ -496,7 +496,7 @@ export default function Sales() {
               <button
                 className={`px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border transition ${
                   expandedGroups.has("nrg_adders")
-                    ? "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                    ? "border-slate-400 bg-slate-100 text-slate-800 hover:bg-slate-200"
                     : "border-slate-200 bg-slate-50 text-slate-400 hover:bg-slate-100"
                 }`}
                 onClick={() => toggleGroup("nrg_adders")}
@@ -508,7 +508,7 @@ export default function Sales() {
             </div>
           </div>
 
-          {msg && <div className="rounded-lg border border-amber-200/70 bg-amber-50/70 text-amber-900 px-3 py-2 text-xs">{msg}</div>}
+          {msg && <div className="rounded-lg border border-slate-300 bg-slate-100 text-slate-800 px-3 py-2 text-xs">{msg}</div>}
 
           <div className={`${UI.card} p-3`}>
             <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-3">
@@ -541,7 +541,7 @@ export default function Sales() {
               <tr className="text-left text-slate-700">
                 {visibleColumns.map((col, i) => (
                   <th key={col.key}
-                    className={`px-2.5 py-2 whitespace-nowrap border-r border-slate-200/60 font-semibold select-none hover:bg-slate-100/80 transition-colors ${i === visibleColumns.length - 1 ? "border-r-0" : ""} ${col.type === "money" || col.type === "num" ? "text-right" : ""} ${col.group ? "bg-blue-50/40" : ""}`}
+                    className={`px-2.5 py-2 whitespace-nowrap border-r border-slate-200/60 font-semibold select-none hover:bg-slate-100/80 transition-colors ${i === visibleColumns.length - 1 ? "border-r-0" : ""} ${col.type === "money" || col.type === "num" ? "text-right" : ""} ${col.group ? "bg-slate-50/60" : ""}`}
                   >
                     <span className="inline-flex items-center gap-1">
                       {/* Group toggle chevron */}
@@ -576,7 +576,7 @@ export default function Sales() {
                 sortedRows.map(r => {
                   const prog = getProgress(r);
                   return (
-                  <tr key={r.id} onClick={() => openEdit(r)} className="border-b border-slate-200/40 hover:bg-indigo-50/40 cursor-pointer transition-colors">
+                  <tr key={r.id} onClick={() => openEdit(r)} className="border-b border-slate-200/40 hover:bg-slate-50 cursor-pointer transition-colors">
                     {visibleColumns.map(col => {
                       /* Progress bar cell */
                       if (col.key === "__progress") return (
@@ -595,14 +595,14 @@ export default function Sales() {
                           <div className="flex items-center justify-center gap-1">
                             {MILESTONES.map(m => (
                               <div key={m.key} title={`${m.short}: ${r[m.key] ? fmtDate(r[m.key] as string) : "Pending"}`}
-                                className={`w-2 h-2 rounded-full transition-colors ${r[m.key] ? "bg-emerald-500" : "bg-slate-200"}`} />
+                                className={`w-2 h-2 rounded-full transition-colors ${r[m.key] ? "bg-slate-700" : "bg-slate-200"}`} />
                             ))}
                           </div>
                         </td>
                       );
                       /* Standard cell */
                       return (
-                        <td key={col.key} className={`px-2.5 py-2 whitespace-nowrap border-r border-slate-200/40 ${col.type === "money" || col.type === "num" ? "text-right tabular-nums" : ""} ${col.group ? "bg-blue-50/20" : ""}`}>
+                        <td key={col.key} className={`px-2.5 py-2 whitespace-nowrap border-r border-slate-200/40 ${col.type === "money" || col.type === "num" ? "text-right tabular-nums" : ""} ${col.group ? "bg-slate-50/40" : ""}`}>
                           {cellVal(r, col)}
                         </td>
                       );
@@ -870,7 +870,7 @@ function EditDialog({ isNew, editRow, editDraft, editMsg, saving, editTab, setEd
 
         {/* Footer */}
         <div className="flex items-center justify-between px-5 py-3 border-t border-slate-100 bg-slate-50 rounded-b-xl flex-shrink-0">
-          {editMsg && <div className="text-xs text-amber-600">{editMsg}</div>}
+          {editMsg && <div className="text-xs text-slate-600">{editMsg}</div>}
           {!editMsg && <div />}
           <div className="flex gap-2">
             <button className={UI.buttonGhost} onClick={onClose}>Cancel</button>
