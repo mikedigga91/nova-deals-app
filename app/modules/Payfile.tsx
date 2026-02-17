@@ -173,25 +173,22 @@ export default function Payfile() {
 function DealManager() {
   const [query,setQuery]=useState("");
   const [loading,setLoading]=useState(false);
-  const [rows,setRows]=useState<MergedRow[]>([]);
+  const [allRows,setAllRows]=useState<MergedRow[]>([]);
   const [editDeal,setEditDeal]=useState<DealRow|null>(null);
   const [editPf,setEditPf]=useState<PayfileEntry|null>(null);
   const [open,setOpen]=useState(false);
   const [saving,setSaving]=useState(false);
   const [toast,setToast]=useState<string|null>(null);
-  const deb=useRef<number|null>(null);
 
   function showToast(m:string){setToast(m);setTimeout(()=>setToast(null),3500);}
 
-  /* Search: get deals then fetch their payfile entries for install_amount */
-  const doSearch=useCallback(async(q:string)=>{
-    const t=q.trim();
-    if(t.length<2){setRows([]);return;}
+  /* Load ALL deals on mount, then filter client-side */
+  const loadAll=useCallback(async()=>{
     setLoading(true);
 
     const {data:deals,error}=await supabase.from("deals_view").select(DEAL_COLS)
-      .ilike("customer_name",`%${t}%`).order("date_closed",{ascending:false}).limit(50);
-    if(error||!deals){showToast(error?.message??"Search error");setRows([]);setLoading(false);return;}
+      .order("date_closed",{ascending:false}).limit(500);
+    if(error||!deals){showToast(error?.message??"Load error");setAllRows([]);setLoading(false);return;}
 
     // Fetch payfile entries for these deals to get install_amount
     const ids=deals.map((d:any)=>d.id);
@@ -202,15 +199,23 @@ function DealManager() {
     }
 
     const merged:MergedRow[]=deals.map((d:any)=>({...d,pf_install_amount:pfMap.get(d.id)??null}));
-    setRows(merged);
+    setAllRows(merged);
     setLoading(false);
   },[]);
 
-  useEffect(()=>{
-    if(deb.current) clearTimeout(deb.current);
-    deb.current=window.setTimeout(()=>doSearch(query),300);
-    return ()=>{if(deb.current) clearTimeout(deb.current);};
-  },[query,doSearch]);
+  useEffect(()=>{loadAll();},[loadAll]);
+
+  /* Client-side filter by name, rep, company */
+  const rows=useMemo(()=>{
+    const q=query.trim().toLowerCase();
+    if(!q) return allRows;
+    return allRows.filter(r=>
+      (r.customer_name?.toLowerCase().includes(q))||
+      (r.sales_rep?.toLowerCase().includes(q))||
+      (r.company?.toLowerCase().includes(q))||
+      (r.appointment_setter?.toLowerCase().includes(q))
+    );
+  },[allRows,query]);
 
   /* Open deal: load full deal + payfile entry */
   async function openRow(row:MergedRow){
@@ -275,7 +280,7 @@ function DealManager() {
     if(pe){showToast(`Payfile save error: ${pe.message}`);setSaving(false);return;}
 
     showToast("Saved successfully.");
-    setSaving(false);setOpen(false);doSearch(query);
+    setSaving(false);setOpen(false);loadAll();
   }
 
   function sd<K extends keyof DealRow>(k:K,v:DealRow[K]){setEditDeal(p=>p?{...p,[k]:v}:p);}
@@ -303,13 +308,13 @@ function DealManager() {
     <div className="no-print px-6 py-5">
       {toast&&<div className="fixed top-4 right-4 z-[9999] bg-slate-900 text-white text-xs px-4 py-2.5 rounded-lg shadow-lg">{toast}</div>}
 
-      {/* Search */}
+      {/* Filter */}
       <div className="mb-5">
-        <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Search by Customer Name</label>
+        <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Filter Deals</label>
         <input className="w-full max-w-md border border-slate-200/70 rounded-lg px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-slate-300"
-          placeholder='Type customer name (e.g. "Siray Perez")' value={query} onChange={e=>setQuery(e.target.value)} />
+          placeholder="Filter by customer name, sales rep, or company…" value={query} onChange={e=>setQuery(e.target.value)} />
         <p className="text-[10px] text-slate-400 mt-1">
-          {loading?"Searching…":`${rows.length} result${rows.length!==1?"s":""} · type at least 2 characters`}
+          {loading?"Loading deals…":`${rows.length} of ${allRows.length} deals shown`}
         </p>
       </div>
 
@@ -323,7 +328,7 @@ function DealManager() {
             <tbody>
               {rows.length===0?(
                 <tr><td colSpan={TC.length} className="text-center py-10 text-slate-400 text-xs">
-                  {query.length<2?"Start typing to search for a customer.":"No deals found."}
+                  {loading?"Loading deals…":query?"No deals match your filter.":"No deals found."}
                 </td></tr>
               ):(
                 rows.map(r=>(
