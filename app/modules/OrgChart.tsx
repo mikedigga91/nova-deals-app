@@ -50,6 +50,11 @@ const CARD_H = 164;
 const H_GAP = 48;
 const V_GAP = 96;
 
+/* ── Hybrid layout thresholds ── */
+const MAX_HORIZONTAL_CHILDREN = 3;   // switch to vertical stack when > this
+const VERTICAL_STACK_GAP = 24;       // compact gap for stacked children
+const DEPTH_FORCE_VERTICAL = 3;      // at this depth, always stack vertically
+
 /* Department hex colors for card styling */
 type DeptHexColor = { bar: string; barText: string; cardBg: string; cardBorder: string };
 
@@ -343,26 +348,83 @@ function buildTree(employees: Employee[], collapsedSet: Set<string>, filterDept:
   return roots[0];
 }
 
-function computeSubtreeWidths(node: TreeNode): number {
+/* ── Hybrid layout: decide if a node's children should be horizontal or vertical ── */
+function shouldStackVertically(node: TreeNode, depth: number): boolean {
+  if (depth >= DEPTH_FORCE_VERTICAL) return true;
+  if (node.children.length > MAX_HORIZONTAL_CHILDREN) return true;
+  return false;
+}
+
+function computeSubtreeWidths(node: TreeNode, depth: number = 0): number {
   if (node.children.length === 0) {
     node.subtreeWidth = CARD_W;
     return CARD_W;
   }
+
+  if (shouldStackVertically(node, depth)) {
+    // Vertical stack: width is max child subtree width, shifted right of parent
+    let maxChildW = 0;
+    for (const child of node.children) {
+      maxChildW = Math.max(maxChildW, computeSubtreeWidths(child, depth + 1));
+    }
+    // Parent card + indent + widest child
+    node.subtreeWidth = Math.max(CARD_W, CARD_W * 0.4 + maxChildW);
+    return node.subtreeWidth;
+  }
+
+  // Horizontal: sum children widths + gaps
   let total = 0;
-  for (const child of node.children) total += computeSubtreeWidths(child);
+  for (const child of node.children) total += computeSubtreeWidths(child, depth + 1);
   total += (node.children.length - 1) * H_GAP;
   node.subtreeWidth = Math.max(CARD_W, total);
   return node.subtreeWidth;
 }
 
-function positionNodes(node: TreeNode, x: number, y: number): void {
+function positionNodes(node: TreeNode, x: number, y: number, depth: number = 0): void {
   node.x = x + node.subtreeWidth / 2 - CARD_W / 2;
   node.y = y;
-  let childX = x;
-  for (const child of node.children) {
-    positionNodes(child, childX, y + CARD_H + V_GAP);
-    childX += child.subtreeWidth + H_GAP;
+
+  if (node.children.length === 0) return;
+
+  if (shouldStackVertically(node, depth)) {
+    // Stack children vertically, indented to the right of parent center
+    const indent = CARD_W * 0.4;
+    let childY = y + CARD_H + V_GAP;
+    for (const child of node.children) {
+      positionNodes(child, x + indent, childY, depth + 1);
+      // Height of this child's subtree needs to be estimated
+      const childSubHeight = getSubtreeHeight(child, depth + 1);
+      childY += childSubHeight + VERTICAL_STACK_GAP;
+    }
+  } else {
+    // Horizontal layout
+    let childX = x;
+    for (const child of node.children) {
+      positionNodes(child, childX, y + CARD_H + V_GAP, depth + 1);
+      childX += child.subtreeWidth + H_GAP;
+    }
   }
+}
+
+/** Estimate the pixel height of a subtree (for vertical stacking spacing) */
+function getSubtreeHeight(node: TreeNode, depth: number): number {
+  if (node.children.length === 0) return CARD_H;
+
+  if (shouldStackVertically(node, depth)) {
+    let h = CARD_H + V_GAP;
+    for (let i = 0; i < node.children.length; i++) {
+      h += getSubtreeHeight(node.children[i], depth + 1);
+      if (i < node.children.length - 1) h += VERTICAL_STACK_GAP;
+    }
+    return h;
+  }
+
+  // Horizontal: max child height
+  let maxChildH = 0;
+  for (const child of node.children) {
+    maxChildH = Math.max(maxChildH, getSubtreeHeight(child, depth + 1));
+  }
+  return CARD_H + V_GAP + maxChildH;
 }
 
 function flattenTree(node: TreeNode, parentX: number | null, parentY: number | null, depth: number): LayoutNode[] {
@@ -383,8 +445,8 @@ function flattenTree(node: TreeNode, parentX: number | null, parentY: number | n
 function layoutTree(employees: Employee[], collapsedSet: Set<string>, filterDept: string | null): { nodes: LayoutNode[]; width: number; height: number } {
   const root = buildTree(employees, collapsedSet, filterDept);
   if (!root) return { nodes: [], width: 0, height: 0 };
-  computeSubtreeWidths(root);
-  positionNodes(root, 80, 80);
+  computeSubtreeWidths(root, 0);
+  positionNodes(root, 80, 80, 0);
   const nodes = flattenTree(root, null, null, 0);
 
   let maxX = 0, maxY = 0;
@@ -414,10 +476,6 @@ export default function OrgChart() {
   const [highlightId, setHighlightId] = useState<string | null>(null);
 
   const [zoom, setZoom] = useState(0.85);
-  const [panX, setPanX] = useState(0);
-  const [panY, setPanY] = useState(0);
-  const [isPanning, setIsPanning] = useState(false);
-  const panStart = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLDivElement>(null);
 
@@ -603,8 +661,9 @@ export default function OrgChart() {
       const target = recalc.nodes.find(n => n.employee.id === empId);
       if (target && containerRef.current) {
         const rect = containerRef.current.getBoundingClientRect();
-        setPanX(rect.width / 2 - (target.x + CARD_W / 2) * zoom);
-        setPanY(rect.height / 2 - (target.y + CARD_H / 2) * zoom);
+        const scrollX = (target.x + CARD_W / 2) * zoom - rect.width / 2;
+        const scrollY = (target.y + CARD_H / 2) * zoom - rect.height / 2;
+        containerRef.current.scrollTo({ left: Math.max(0, scrollX), top: Math.max(0, scrollY), behavior: "smooth" });
       }
     }, 50);
 
@@ -612,8 +671,9 @@ export default function OrgChart() {
     setSearchQuery("");
   }, [employees, collapsedSet, zoom]);
 
-  /* ── Zoom Controls ── */
+  /* ── Zoom Controls (CTRL/CMD + wheel only) ── */
   const handleWheel = useCallback((e: React.WheelEvent) => {
+    if (!e.ctrlKey && !e.metaKey) return; // only zoom with CTRL/CMD held
     e.preventDefault();
     const delta = e.deltaY > 0 ? -0.08 : 0.08;
     setZoom(z => Math.min(2, Math.max(0.2, z + delta)));
@@ -626,24 +686,12 @@ export default function OrgChart() {
     const scaleY = (rect.height - 80) / treeHeight;
     const newZoom = Math.min(1, Math.max(0.2, Math.min(scaleX, scaleY)));
     setZoom(newZoom);
-    setPanX((rect.width - treeWidth * newZoom) / 2);
-    setPanY((rect.height - treeHeight * newZoom) / 2);
+    // Reset scroll position — scrollbars handle navigation now
+    if (containerRef.current) {
+      containerRef.current.scrollLeft = 0;
+      containerRef.current.scrollTop = 0;
+    }
   }, [nodes.length, treeWidth, treeHeight]);
-
-  /* ── Pan Controls ── */
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    if ((e.target as HTMLElement).closest("[data-card]")) return;
-    setIsPanning(true);
-    panStart.current = { x: e.clientX, y: e.clientY, panX, panY };
-  }, [panX, panY]);
-
-  const handleMouseMove = useCallback((e: React.MouseEvent) => {
-    if (!isPanning) return;
-    setPanX(panStart.current.panX + (e.clientX - panStart.current.x));
-    setPanY(panStart.current.panY + (e.clientY - panStart.current.y));
-  }, [isPanning]);
-
-  const handleMouseUp = useCallback(() => setIsPanning(false), []);
 
   /* ── Department Tabs Drag & Drop ── */
   const onDeptDragStart = (dept: string) => (e: React.DragEvent) => {
@@ -1135,14 +1183,16 @@ export default function OrgChart() {
     const ctx = canvas.getContext("2d")!;
     ctx.scale(scale, scale);
 
-    ctx.fillStyle = "#f8fafc";
+    // Corkboard background
+    ctx.fillStyle = "#c8a882";
     ctx.fillRect(0, 0, treeWidth, treeHeight);
 
     for (const node of nodes) {
       if (node.parentX != null && node.parentY != null) {
         ctx.beginPath();
-        ctx.strokeStyle = "#9ca3af";
+        ctx.strokeStyle = "#8b7355";
         ctx.lineWidth = 1.5;
+        ctx.setLineDash([6, 3]);
         const sx = node.parentX;
         const sy = node.parentY;
         const ex = node.x + CARD_W / 2;
@@ -1246,7 +1296,7 @@ export default function OrgChart() {
                 </svg>
               </div>
               <div>
-                <h2 className="text-base font-bold text-slate-800 tracking-tight">Organization Chart</h2>
+                <h2 className="text-base font-bold text-slate-800 tracking-tight">Nova NRG Organizational Chart</h2>
                 <p className="text-xs text-slate-400">{employees.filter(e => e.is_active).length} active members</p>
               </div>
             </div>
@@ -1500,36 +1550,43 @@ export default function OrgChart() {
       ) : (
         <div
           ref={containerRef}
-          className="flex-1 overflow-hidden relative select-none"
+          className="flex-1 overflow-auto relative select-none"
           style={{
-            cursor: isPanning ? "grabbing" : "grab",
-            background: "linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)",
+            /* Corkboard / bulletin board texture */
+            backgroundColor: "#c8a882",
+            backgroundImage: `
+              radial-gradient(ellipse at 20% 50%, rgba(210,175,130,0.5) 0%, transparent 50%),
+              radial-gradient(ellipse at 80% 20%, rgba(190,155,110,0.4) 0%, transparent 50%),
+              radial-gradient(ellipse at 50% 80%, rgba(180,145,100,0.3) 0%, transparent 50%),
+              url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='60' height='60' filter='url(%23n)' opacity='0.08'/%3E%3C/svg%3E")
+            `,
+            boxShadow: "inset 0 2px 12px rgba(0,0,0,0.15)",
           }}
           onWheel={handleWheel}
-          onMouseDown={handleMouseDown}
-          onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUp}
-          onMouseLeave={handleMouseUp}
         >
-          {/* Subtle grid */}
-          <div style={{
-            position: "absolute", inset: 0, opacity: 0.3,
-            backgroundImage: "radial-gradient(circle, #cbd5e1 0.8px, transparent 0.8px)",
-            backgroundSize: "28px 28px",
-          }} />
-
+          {/* Sizing wrapper — sets scrollable area to scaled tree dimensions */}
           <div
             style={{
-              transform: `translate(${panX}px, ${panY}px) scale(${zoom})`,
+              width: treeWidth * zoom,
+              height: treeHeight * zoom,
+              position: "relative",
+              minWidth: "100%",
+              minHeight: "100%",
+            }}
+          >
+          {/* Scaled content layer */}
+          <div
+            style={{
+              transform: `scale(${zoom})`,
               transformOrigin: "0 0",
+              width: treeWidth,
+              height: treeHeight,
               position: "absolute",
               top: 0,
               left: 0,
-              width: treeWidth,
-              height: treeHeight,
             }}
           >
-            {/* Connector lines */}
+            {/* Connector lines (thread/string style) */}
             <svg style={{ position: "absolute", top: 0, left: 0, width: treeWidth, height: treeHeight, pointerEvents: "none" }}>
               {nodes.map(node => {
                 if (node.parentX == null || node.parentY == null) return null;
@@ -1540,8 +1597,7 @@ export default function OrgChart() {
                 const midY = sy + (ey - sy) / 2;
                 return (
                   <g key={`line-${node.employee.id}`}>
-                    <path d={`M ${sx} ${sy} L ${sx} ${midY} L ${ex} ${midY} L ${ex} ${ey}`} fill="none" stroke="#b0b8c4" strokeWidth={1.5} />
-                    <circle cx={sx} cy={midY} r="2" fill="#b0b8c4" />
+                    <path d={`M ${sx} ${sy} L ${sx} ${midY} L ${ex} ${midY} L ${ex} ${ey}`} fill="none" stroke="#8b7355" strokeWidth={1.5} strokeDasharray="6 3" opacity={0.6} />
                   </g>
                 );
               })}
@@ -1609,10 +1665,22 @@ export default function OrgChart() {
                     onDrop={onDropMakeChild(emp)}
                   />
 
-                  {/* ── Card visual ── */}
+                  {/* ── Pin dot (top center of card) ── */}
+                  <div
+                    className="absolute top-[-6px] left-1/2 -translate-x-1/2 z-50 pointer-events-none"
+                    style={{
+                      width: 14,
+                      height: 14,
+                      borderRadius: "50%",
+                      background: `radial-gradient(circle at 40% 35%, #ff6b6b, #cc3333)`,
+                      boxShadow: "0 2px 4px rgba(0,0,0,0.3), inset 0 1px 2px rgba(255,255,255,0.3)",
+                    }}
+                  />
+
+                  {/* ── Card visual (paper feel) ── */}
                   <div
                     className={`
-                      w-full h-full rounded-xl overflow-hidden
+                      w-full h-full rounded-lg overflow-hidden
                       transition-all duration-200
                       ${isHighlighted ? "ring-2 ring-blue-500 ring-offset-2" : ""}
                       ${isDropChild ? "ring-2 ring-blue-400 ring-offset-1" : ""}
@@ -1623,7 +1691,8 @@ export default function OrgChart() {
                       borderRight: `1px solid ${dc.cardBorder}66`,
                       borderBottom: `1px solid ${dc.cardBorder}66`,
                       borderLeft: `${ds.borderWidth}px solid ${dc.cardBorder}`,
-                      boxShadow: ds.shadow,
+                      boxShadow: `${ds.shadow}, 2px 3px 8px rgba(0,0,0,0.12)`,
+                      transform: `rotate(${(hashStr(emp.id) % 5 - 2) * 0.4}deg)`,
                     }}
                     onClick={() => { setEditEmp({ ...emp }); setEditEmpColor(customEmpColors[emp.id] || null); }}
                   >
@@ -1768,10 +1837,11 @@ export default function OrgChart() {
                 </div>
               );
             })}
-          </div>
+          </div>{/* end inner absolute layer */}
+          </div>{/* end sizing wrapper */}
 
-          {/* Zoom Controls */}
-          <div className="absolute bottom-5 right-5 flex flex-col gap-1 bg-white/95 backdrop-blur-md border border-slate-200 rounded-xl shadow-lg p-1.5 z-20">
+          {/* Zoom Controls — sticky over scroll area */}
+          <div className="sticky bottom-5 right-5 float-right mr-5 flex flex-col gap-1 bg-white/95 backdrop-blur-md border border-slate-200 rounded-xl shadow-lg p-1.5 z-20" style={{ marginTop: -180 }}>
             <button className="w-9 h-9 rounded-lg hover:bg-slate-100 flex items-center justify-center text-base font-bold text-slate-500 transition-colors"
               onClick={() => setZoom(z => Math.min(2, z + 0.15))}>+</button>
             <button className="w-9 h-9 rounded-lg hover:bg-slate-100 flex items-center justify-center text-[10px] font-bold text-slate-400 transition-colors"
@@ -1784,10 +1854,6 @@ export default function OrgChart() {
                 <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
               </svg>
             </button>
-          </div>
-
-          <div className="absolute bottom-5 left-5 text-[11px] text-slate-400 bg-white/90 backdrop-blur-md px-3 py-1.5 rounded-lg border border-slate-200 font-medium shadow-sm">
-            {Math.round(zoom * 100)}%
           </div>
         </div>
       )}
