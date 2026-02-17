@@ -69,90 +69,125 @@ const SELECT_COLUMNS = [
   "install_1_racks_date","install_2_panel_landed_date","pto_date","paid_date",
 ].join(",");
 
-/* Column definition — label, DealRow key, type */
-type ColDef = { label: string; key: keyof DealRow; type: "text" | "money" | "num" | "date" };
-const COLUMNS: ColDef[] = [
-  { label: "Sales Rep", key: "sales_rep", type: "text" },
-  { label: "Company", key: "company", type: "text" },
-  { label: "Customer Name", key: "customer_name", type: "text" },
-  { label: "Appointment Setter", key: "appointment_setter", type: "text" },
-  { label: "CC App Setter", key: "call_center_appointment_setter", type: "text" },
-  { label: "Company (Barayev)", key: "company_barayev_input", type: "text" },
-  { label: "KW System", key: "kw_system", type: "num" },
-  { label: "Agent Cost Basis", key: "agent_cost_basis_sold_at", type: "money" },
-  { label: "Net $/W", key: "net_price_per_watt", type: "num" },
-  { label: "Date Closed", key: "date_closed", type: "date" },
-  { label: "Contract Value", key: "contract_value", type: "money" },
-  { label: "Total Adders", key: "total_adders", type: "money" },
-  { label: "Contract Net Price", key: "contract_net_price", type: "money" },
-  { label: "Rev", key: "rev", type: "money" },
-  { label: "Gross Profit", key: "gross_profit", type: "money" },
-  { label: "Visionary Commission", key: "visionary_paid_out_commission", type: "money" },
-  { label: "NRG Customer Adders", key: "nova_nrg_customer_adders", type: "money" },
-  { label: "Agent Payout", key: "agent_payout", type: "money" },
-  { label: "Manager", key: "manager", type: "text" },
-  { label: "Manager $", key: "manager_amount", type: "money" },
-  { label: "Status", key: "status", type: "text" },
-  { label: "P1 NRG Paid", key: "p1_nova_nrg_paid", type: "money" },
-  { label: "Survey Date", key: "site_survey_date_completed", type: "date" },
-  { label: "Survey Status", key: "site_survey_status", type: "text" },
-  { label: "Owed Money", key: "owed_money", type: "money" },
-  { label: "Paid Bonus", key: "paid_bonus", type: "money" },
-  { label: "Fee Charges", key: "fee_charges", type: "money" },
-  { label: "Notes", key: "notes", type: "text" },
-  { label: "Install Partner", key: "install_partner", type: "text" },
-  { label: "State", key: "state", type: "text" },
-  { label: "Teams", key: "teams", type: "text" },
-  { label: "Activated", key: "activated", type: "text" },
-  { label: "Online Deal", key: "online_deal", type: "text" },
-  { label: "CC Lead", key: "call_center_lead", type: "text" },
-  { label: "Month/Year", key: "month_year", type: "text" },
-  { label: "Commission Structure", key: "commission_structure", type: "text" },
-  { label: "REVENUE", key: "revenue", type: "money" },
-  { label: "NRG P2 Rev Date", key: "paid_nova_nrg_p2_rev_date", type: "date" },
-  { label: "NRG P1+P2 Rev Amt", key: "paid_nova_nrg_p1_p2_rev_amount", type: "money" },
-  { label: "NRG Post-P2 Date", key: "paid_nova_nrg_post_p2_date", type: "date" },
-  { label: "NRG Post-P2 Amt", key: "paid_nova_nrg_post_p2_rev_amount", type: "money" },
-  { label: "NRG Reversal Date", key: "nova_nrg_reversal_date", type: "date" },
-  { label: "NRG Reversal Amt", key: "nova_nrg_reversal_amount", type: "money" },
-  { label: "NRG Fee Amt", key: "nova_nrg_fee_amount", type: "money" },
-  { label: "NRG After Fee", key: "nova_nrg_rev_after_fee_amount", type: "money" },
-  { label: "Visionary Rev", key: "visionary_revenue", type: "money" },
-  { label: "Vis P2 Date", key: "paid_visionary_p2_date", type: "date" },
-  { label: "Vis P1+P2 Amt", key: "paid_visionary_p1_p2_amount", type: "money" },
-  { label: "Vis Post-P2 Date", key: "paid_visionary_post_p2_date", type: "date" },
-  { label: "Vis Post-P2 Amt", key: "paid_visionary_post_p2_amount", type: "money" },
-  { label: "Vis Reversal Date", key: "p1_visionary_reversal_date", type: "date" },
-  { label: "Vis Reversal Amt", key: "p1_visionary_reversal_amount", type: "money" },
-  { label: "Vis Fee Amt", key: "visionary_fee_amount", type: "money" },
-  { label: "Vis After Fee", key: "visionary_rev_after_fee_amount", type: "money" },
-  { label: "Agent Pay", key: "agent_pay", type: "money" },
-  { label: "Agent P2 Date", key: "paid_agent_p2_date", type: "date" },
-  { label: "Agent P1+P2 Amt", key: "paid_agent_p1_p2_amount", type: "money" },
-  { label: "Agent Post-P2 Date", key: "paid_agent_post_p2_date", type: "date" },
-  { label: "Agent Post-P2 Amt", key: "paid_agent_post_p2_amount", type: "money" },
-  { label: "Agent Reversal Date", key: "p1_agent_reversal_date", type: "date" },
-  { label: "Agent Reversal Amt", key: "p1_agent_reversal_amount", type: "money" },
-  { label: "Agent Fee Amt", key: "agent_fee_amount", type: "money" },
-  { label: "Agent After Fee", key: "agent_rev_after_fee_amount", type: "money" },
-  { label: "Agent Net Price", key: "agent_net_price", type: "money" },
-  { label: "Only Agent Net Price", key: "only_agent_net_price_accounts", type: "text" },
-  /* Milestones */
-  { label: "Design Ready", key: "design_ready_date", type: "date" },
-  { label: "Permit Submitted", key: "permit_submitted_date", type: "date" },
-  { label: "Permit Approved", key: "permit_approved_date", type: "date" },
-  { label: "Install 1 (Racks)", key: "install_1_racks_date", type: "date" },
-  { label: "Install 2 (Panels)", key: "install_2_panel_landed_date", type: "date" },
-  { label: "PTO", key: "pto_date", type: "date" },
-  { label: "Paid", key: "paid_date", type: "date" },
+/* ─── Milestones (ported from RepPortal) ─── */
+const MILESTONES: { key: keyof DealRow; short: string }[] = [
+  { key: "site_survey_date_completed", short: "Survey" },
+  { key: "design_ready_date",          short: "Design" },
+  { key: "permit_submitted_date",      short: "Perm Sub" },
+  { key: "permit_approved_date",       short: "Perm App" },
+  { key: "install_1_racks_date",       short: "Racks" },
+  { key: "install_2_panel_landed_date",short: "Panels" },
+  { key: "pto_date",                   short: "PTO" },
+  { key: "paid_date",                  short: "Paid" },
 ];
+
+function getCurrentStage(row: DealRow): string {
+  let current = "Not Started";
+  for (const m of MILESTONES) {
+    if (row[m.key]) current = m.short;
+  }
+  return current;
+}
+
+/* ─── Column definitions with collapsible group support ─── */
+type ColDef = {
+  label: string;
+  key: keyof DealRow | "__current_stage";
+  type: "text" | "money" | "num" | "date";
+  group?: string;        // child of this group (hidden when collapsed)
+  groupParent?: string;  // this col is the toggle for this group
+  computed?: boolean;     // not a DB field
+};
+
+const ALL_COLUMNS: ColDef[] = [
+  /* ── Core deal info ── */
+  { label: "Date Closed",        key: "date_closed",                    type: "date" },
+  { label: "Customer Name",      key: "customer_name",                  type: "text" },
+  { label: "Company",            key: "company",                        type: "text" },
+  { label: "Sales Rep",          key: "sales_rep",                      type: "text" },
+  { label: "Appointment Setter", key: "appointment_setter",             type: "text" },
+  { label: "CC App Setter",      key: "call_center_appointment_setter", type: "text" },
+  { label: "KW System",          key: "kw_system",                      type: "num" },
+  { label: "Agent Cost Basis",   key: "agent_cost_basis_sold_at",       type: "money" },
+  { label: "Net $/W",            key: "net_price_per_watt",             type: "num" },
+  { label: "Contract Value",     key: "contract_value",                 type: "money" },
+  { label: "Total Adders",       key: "total_adders",                   type: "money" },
+  { label: "Contract Net Price", key: "contract_net_price",             type: "money" },
+
+  /* ── Rev + NRG sub-columns (collapsible) ── */
+  { label: "Rev",                key: "rev",                                type: "money", groupParent: "rev" },
+  { label: "NRG P2 Rev Date",   key: "paid_nova_nrg_p2_rev_date",         type: "date",  group: "rev" },
+  { label: "NRG P1+P2 Rev Amt", key: "paid_nova_nrg_p1_p2_rev_amount",    type: "money", group: "rev" },
+  { label: "NRG Post-P2 Date",  key: "paid_nova_nrg_post_p2_date",        type: "date",  group: "rev" },
+  { label: "NRG Post-P2 Amt",   key: "paid_nova_nrg_post_p2_rev_amount",  type: "money", group: "rev" },
+  { label: "NRG Reversal Date", key: "nova_nrg_reversal_date",            type: "date",  group: "rev" },
+  { label: "NRG Reversal Amt",  key: "nova_nrg_reversal_amount",          type: "money", group: "rev" },
+  { label: "NRG Fee Amt",       key: "nova_nrg_fee_amount",               type: "money", group: "rev" },
+  { label: "NRG After Fee",     key: "nova_nrg_rev_after_fee_amount",     type: "money", group: "rev" },
+
+  /* ── Gross Profit ── */
+  { label: "Gross Profit", key: "gross_profit", type: "money" },
+
+  /* ── Visionary Commission + sub-columns (collapsible) ── */
+  { label: "Visionary Commission", key: "visionary_paid_out_commission",  type: "money", groupParent: "vis_comm" },
+  { label: "Vis P2 Date",         key: "paid_visionary_p2_date",          type: "date",  group: "vis_comm" },
+  { label: "Vis P1+P2 Amt",       key: "paid_visionary_p1_p2_amount",     type: "money", group: "vis_comm" },
+  { label: "Vis Post-P2 Date",    key: "paid_visionary_post_p2_date",     type: "date",  group: "vis_comm" },
+  { label: "Vis Post-P2 Amt",     key: "paid_visionary_post_p2_amount",   type: "money", group: "vis_comm" },
+  { label: "Vis Reversal Date",   key: "p1_visionary_reversal_date",      type: "date",  group: "vis_comm" },
+  { label: "Vis Reversal Amt",    key: "p1_visionary_reversal_amount",    type: "money", group: "vis_comm" },
+  { label: "Vis Fee Amt",         key: "visionary_fee_amount",            type: "money", group: "vis_comm" },
+  { label: "Vis After Fee",       key: "visionary_rev_after_fee_amount",  type: "money", group: "vis_comm" },
+
+  /* ── Agent Payout + sub-columns (collapsible) ── */
+  { label: "Agent Payout",        key: "agent_payout",                   type: "money", groupParent: "agent_pay" },
+  { label: "Agent P2 Date",       key: "paid_agent_p2_date",             type: "date",  group: "agent_pay" },
+  { label: "Agent P1+P2 Amt",     key: "paid_agent_p1_p2_amount",        type: "money", group: "agent_pay" },
+  { label: "Agent Post-P2 Date",  key: "paid_agent_post_p2_date",        type: "date",  group: "agent_pay" },
+  { label: "Agent Post-P2 Amt",   key: "paid_agent_post_p2_amount",      type: "money", group: "agent_pay" },
+  { label: "Agent Reversal Date", key: "p1_agent_reversal_date",         type: "date",  group: "agent_pay" },
+  { label: "Agent Reversal Amt",  key: "p1_agent_reversal_amount",       type: "money", group: "agent_pay" },
+  { label: "Agent Fee Amt",       key: "agent_fee_amount",               type: "money", group: "agent_pay" },
+  { label: "Agent After Fee",     key: "agent_rev_after_fee_amount",     type: "money", group: "agent_pay" },
+
+  /* ── Status + Computed Stage ── */
+  { label: "Status",        key: "status",           type: "text" },
+  { label: "Current Stage", key: "__current_stage",   type: "text", computed: true },
+
+  /* ── NRG Customer Adders (toggleable via toolbar) ── */
+  { label: "NRG Customer Adders", key: "nova_nrg_customer_adders", type: "money", group: "nrg_adders" },
+
+  /* ── Remaining always-visible columns ── */
+  { label: "Manager",           key: "manager",                      type: "text" },
+  { label: "Manager $",         key: "manager_amount",               type: "money" },
+  { label: "Owed Money",        key: "owed_money",                   type: "money" },
+  { label: "Paid Bonus",        key: "paid_bonus",                   type: "money" },
+  { label: "State",             key: "state",                        type: "text" },
+  { label: "Teams",             key: "teams",                        type: "text" },
+  { label: "Activated",         key: "activated",                    type: "text" },
+  { label: "Online Deal",       key: "online_deal",                  type: "text" },
+  { label: "CC Lead",           key: "call_center_lead",             type: "text" },
+  { label: "Survey Date",       key: "site_survey_date_completed",   type: "date" },
+  { label: "Survey Status",     key: "site_survey_status",           type: "text" },
+  { label: "Design Ready",      key: "design_ready_date",            type: "date" },
+  { label: "Permit Submitted",  key: "permit_submitted_date",        type: "date" },
+  { label: "Permit Approved",   key: "permit_approved_date",         type: "date" },
+  { label: "Install 1 (Racks)", key: "install_1_racks_date",         type: "date" },
+  { label: "Install 2 (Panels)",key: "install_2_panel_landed_date",  type: "date" },
+  { label: "PTO",               key: "pto_date",                     type: "date" },
+  { label: "Paid",              key: "paid_date",                    type: "date" },
+];
+
+/* DB-backed columns only (for edit dialog & save logic) */
+const EDIT_COLUMNS = ALL_COLUMNS.filter(col => !col.computed);
 
 /* Helpers */
 function money(n: number | null | undefined) { if (n == null) return ""; return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(Number(n)); }
 function numFmt(n: number | null | undefined, d = 2) { if (n == null) return ""; const v = Number(n); return Number.isNaN(v) ? "" : v.toFixed(d); }
 function fmtDate(iso: string | null | undefined) { if (!iso) return ""; const p = iso.slice(0, 10).split("-"); return p.length < 3 ? iso : `${p[1]}/${p[2]}/${p[0].slice(-2)}`; }
 function cellVal(row: DealRow, col: ColDef): string {
-  const v = row[col.key];
+  if (col.computed && col.key === "__current_stage") return getCurrentStage(row);
+  const v = row[col.key as keyof DealRow];
   if (v == null) return "";
   if (col.type === "money") return money(v as number);
   if (col.type === "num") return numFmt(v as number);
@@ -194,7 +229,7 @@ function MultiSelect({ label, options, selected, onChange, placeholder }: { labe
         {open && (
           <div className="absolute z-50 mt-1 w-full rounded-xl border border-slate-200/70 bg-white shadow-lg overflow-hidden">
             <div className="p-2 border-b border-slate-200/60">
-              <input className={UI.control} placeholder="Search…" value={q} onChange={e => setQ(e.target.value)} />
+              <input className={UI.control} placeholder="Search..." value={q} onChange={e => setQ(e.target.value)} />
               <div className="mt-1.5 flex items-center justify-between">
                 <span className="text-[10px] text-slate-400">{selected.length === 0 ? "All" : `${selected.length} selected`}</span>
                 <button type="button" className="text-[10px] font-semibold text-slate-600 hover:text-slate-900" onClick={() => onChange([])}>Clear</button>
@@ -234,9 +269,33 @@ export default function Sales() {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
 
-  /* Sort */
-  const [sortCol, setSortCol] = useState<number | null>(null);
+  /* Collapsible column groups — default: main 3 collapsed, NRG Adders visible */
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set(["nrg_adders"]));
+  function toggleGroup(groupId: string) {
+    setExpandedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(groupId)) next.delete(groupId);
+      else next.add(groupId);
+      return next;
+    });
+  }
+
+  const visibleColumns = useMemo(() => {
+    return ALL_COLUMNS.filter(col => {
+      if (col.group) return expandedGroups.has(col.group);
+      return true;
+    });
+  }, [expandedGroups]);
+
+  /* Sort — key-based (stable across expand/collapse) */
+  const [sortKey, setSortKey] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+
+  function handleSort(col: ColDef) {
+    const k = col.key;
+    if (sortKey === k) setSortDir(d => d === "asc" ? "desc" : "asc");
+    else { setSortKey(k); setSortDir("asc"); }
+  }
 
   /* Edit dialog */
   const [editRow, setEditRow] = useState<DealRow | null>(null);
@@ -298,25 +357,32 @@ export default function Sales() {
   }, [rows, teamNames]);
 
   /* Sorting */
-  function handleSort(idx: number) {
-    if (sortCol === idx) setSortDir(d => d === "asc" ? "desc" : "asc");
-    else { setSortCol(idx); setSortDir("asc"); }
-  }
-
   const sortedRows = useMemo(() => {
-    if (sortCol === null) return rows;
-    const col = COLUMNS[sortCol];
+    if (sortKey === null) return rows;
+
+    /* Computed: sort by milestone completion count */
+    if (sortKey === "__current_stage") {
+      const dir = sortDir === "asc" ? 1 : -1;
+      return [...rows].sort((a, b) => {
+        const ac = MILESTONES.filter(m => a[m.key]).length;
+        const bc = MILESTONES.filter(m => b[m.key]).length;
+        return (ac - bc) * dir;
+      });
+    }
+
+    const col = ALL_COLUMNS.find(c => c.key === sortKey);
     if (!col) return rows;
+    const key = col.key as keyof DealRow;
     const dir = sortDir === "asc" ? 1 : -1;
     return [...rows].sort((a, b) => {
-      const av = a[col.key]; const bv = b[col.key];
+      const av = a[key]; const bv = b[key];
       if (av == null && bv == null) return 0;
       if (av == null) return 1;
       if (bv == null) return -1;
       if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
       return String(av).localeCompare(String(bv)) * dir;
     });
-  }, [rows, sortCol, sortDir]);
+  }, [rows, sortKey, sortDir]);
 
   /* Edit dialog helpers */
   function openEdit(row: DealRow) {
@@ -328,7 +394,7 @@ export default function Sales() {
 
   function openNew() {
     const blank: Record<string, any> = { id: "" };
-    for (const col of COLUMNS) blank[col.key] = null;
+    for (const col of EDIT_COLUMNS) blank[col.key] = null;
     setEditRow(blank as DealRow);
     setEditDraft(blank);
     setEditMsg(null);
@@ -346,8 +412,8 @@ export default function Sales() {
     if (isNew) {
       /* ── INSERT new deal ── */
       const payload: Record<string, any> = {};
-      for (const col of COLUMNS) {
-        const k = col.key;
+      for (const col of EDIT_COLUMNS) {
+        const k = col.key as keyof DealRow;
         const val = editDraft[k];
         if (val != null && val !== "") {
           payload[k] = (col.type === "money" || col.type === "num") ? Number(val) : val;
@@ -360,8 +426,8 @@ export default function Sales() {
     } else {
       /* ── UPDATE existing deal ── */
       const payload: Record<string, any> = {};
-      for (const col of COLUMNS) {
-        const k = col.key;
+      for (const col of EDIT_COLUMNS) {
+        const k = col.key as keyof DealRow;
         const rawNew = editDraft[k];
         const rawOld = editRow[k];
         /* Normalize both sides so "7.5" vs 7.5 doesn't trigger a false diff */
@@ -414,9 +480,21 @@ export default function Sales() {
                    "Showing: No access"}
                 </span>
               )}
-              <span className={UI.pill}>{loading ? "Loading…" : `${rows.length} deals`}</span>
+              <span className={UI.pill}>{loading ? "Loading..." : `${rows.length} deals`}</span>
               <button className={UI.buttonGhost} onClick={load}>Refresh</button>
               <button className={UI.buttonGhost} onClick={clearAll}>Clear Filters</button>
+              {/* NRG Customer Adders toggle */}
+              <button
+                className={`px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border transition ${
+                  expandedGroups.has("nrg_adders")
+                    ? "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                    : "border-slate-200 bg-slate-50 text-slate-400 hover:bg-slate-100"
+                }`}
+                onClick={() => toggleGroup("nrg_adders")}
+                title={expandedGroups.has("nrg_adders") ? "Hide NRG Customer Adders column" : "Show NRG Customer Adders column"}
+              >
+                NRG Adders {expandedGroups.has("nrg_adders") ? "ON" : "OFF"}
+              </button>
               <button className={UI.buttonPrimary} onClick={openNew}>+ Add Deal</button>
             </div>
           </div>
@@ -427,7 +505,7 @@ export default function Sales() {
             <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-3">
               <div>
                 <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Customer Name</div>
-                <input className={UI.control} value={customerQ} onChange={e => setCustomerQ(e.target.value)} placeholder="Search…" />
+                <input className={UI.control} value={customerQ} onChange={e => setCustomerQ(e.target.value)} placeholder="Search..." />
               </div>
               <MultiSelect label="Sales Rep" options={options.salesReps} selected={salesReps} onChange={setSalesReps} />
               <MultiSelect label="CC Setter" options={options.ccSetters} selected={ccSetters} onChange={setCcSetters} />
@@ -449,15 +527,32 @@ export default function Sales() {
       {/* Table */}
       <div className="flex-1 min-h-0">
         <div className="h-full overflow-auto">
-          <table className="min-w-[5000px] w-full text-xs">
+          <table className="w-full text-xs" style={{ minWidth: `${visibleColumns.length * 120}px` }}>
             <thead className="sticky top-0 z-10 bg-white/95 backdrop-blur border-b border-slate-200/60">
               <tr className="text-left text-slate-700">
-                {COLUMNS.map((col, i) => (
-                  <th key={col.key} onClick={() => handleSort(i)}
-                    className={`px-2.5 py-2 whitespace-nowrap border-r border-slate-200/60 font-semibold cursor-pointer select-none hover:bg-slate-100/80 transition-colors ${i === COLUMNS.length - 1 ? "border-r-0" : ""} ${col.type === "money" || col.type === "num" ? "text-right" : ""}`}>
+                {visibleColumns.map((col, i) => (
+                  <th key={col.key}
+                    className={`px-2.5 py-2 whitespace-nowrap border-r border-slate-200/60 font-semibold select-none hover:bg-slate-100/80 transition-colors ${i === visibleColumns.length - 1 ? "border-r-0" : ""} ${col.type === "money" || col.type === "num" ? "text-right" : ""} ${col.group ? "bg-blue-50/40" : ""}`}
+                  >
                     <span className="inline-flex items-center gap-1">
-                      {col.label}
-                      {sortCol === i ? <span className="text-[10px]">{sortDir === "asc" ? "▲" : "▼"}</span> : <span className="text-[10px] text-slate-300">⇅</span>}
+                      {/* Group toggle chevron */}
+                      {col.groupParent && (
+                        <button
+                          type="button"
+                          className="text-[10px] text-slate-400 hover:text-slate-700 transition-colors px-0.5"
+                          onClick={(e) => { e.stopPropagation(); toggleGroup(col.groupParent!); }}
+                          title={expandedGroups.has(col.groupParent!) ? "Collapse sub-columns" : "Expand sub-columns"}
+                        >
+                          {expandedGroups.has(col.groupParent!) ? "▾" : "▸"}
+                        </button>
+                      )}
+                      <span className="cursor-pointer" onClick={() => handleSort(col)}>{col.label}</span>
+                      {/* Sort indicator */}
+                      <span className="cursor-pointer" onClick={() => handleSort(col)}>
+                        {sortKey === col.key
+                          ? <span className="text-[10px]">{sortDir === "asc" ? "▲" : "▼"}</span>
+                          : <span className="text-[10px] text-slate-300">⇅</span>}
+                      </span>
                     </span>
                   </th>
                 ))}
@@ -465,14 +560,14 @@ export default function Sales() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td className="px-3 py-8 text-slate-400 text-center" colSpan={COLUMNS.length}>Loading deals…</td></tr>
+                <tr><td className="px-3 py-8 text-slate-400 text-center" colSpan={visibleColumns.length}>Loading deals...</td></tr>
               ) : sortedRows.length === 0 ? (
-                <tr><td className="px-3 py-8 text-slate-400 text-center" colSpan={COLUMNS.length}>No results.</td></tr>
+                <tr><td className="px-3 py-8 text-slate-400 text-center" colSpan={visibleColumns.length}>No results.</td></tr>
               ) : (
                 sortedRows.map(r => (
                   <tr key={r.id} onClick={() => openEdit(r)} className="border-b border-slate-200/40 hover:bg-indigo-50/40 cursor-pointer transition-colors">
-                    {COLUMNS.map(col => (
-                      <td key={col.key} className={`px-2.5 py-2 whitespace-nowrap border-r border-slate-200/40 ${col.type === "money" || col.type === "num" ? "text-right tabular-nums" : ""} ${col.key === "notes" ? "max-w-[200px] truncate" : ""}`} title={col.key === "notes" ? String(r.notes ?? "") : undefined}>
+                    {visibleColumns.map(col => (
+                      <td key={col.key} className={`px-2.5 py-2 whitespace-nowrap border-r border-slate-200/40 ${col.type === "money" || col.type === "num" ? "text-right tabular-nums" : ""} ${col.group ? "bg-blue-50/20" : ""}`}>
                         {cellVal(r, col)}
                       </td>
                     ))}
@@ -500,24 +595,22 @@ export default function Sales() {
 
             <div className="overflow-y-auto flex-1 px-5 py-4">
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-3">
-                {COLUMNS.map(col => {
-                  const val = editDraft[col.key];
+                {EDIT_COLUMNS.map(col => {
+                  const k = col.key as keyof DealRow;
+                  const val = editDraft[k];
                   const displayVal = val == null ? "" : String(val);
                   return (
                     <div key={col.key}>
                       <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block mb-0.5">{col.label}</label>
-                      {col.key === "notes" ? (
-                        <textarea className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-300 resize-none" rows={3}
-                          value={displayVal} onChange={e => setField(col.key, e.target.value)} />
-                      ) : col.type === "date" ? (
+                      {col.type === "date" ? (
                         <input type="date" className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-300"
-                          value={displayVal ? displayVal.slice(0, 10) : ""} onChange={e => setField(col.key, e.target.value)} />
+                          value={displayVal ? displayVal.slice(0, 10) : ""} onChange={e => setField(k, e.target.value)} />
                       ) : col.type === "money" || col.type === "num" ? (
                         <input type="number" step="any" className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm text-right focus:outline-none focus:ring-1 focus:ring-slate-300"
-                          value={displayVal} onChange={e => setField(col.key, e.target.value)} />
+                          value={displayVal} onChange={e => setField(k, e.target.value)} />
                       ) : (
                         <input className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-300"
-                          value={displayVal} onChange={e => setField(col.key, e.target.value)} />
+                          value={displayVal} onChange={e => setField(k, e.target.value)} />
                       )}
                     </div>
                   );
@@ -530,7 +623,7 @@ export default function Sales() {
               {!editMsg && <div />}
               <div className="flex gap-2">
                 <button className={UI.buttonGhost} onClick={() => { setEditRow(null); setIsNew(false); }}>Cancel</button>
-                <button className={UI.buttonPrimary} onClick={saveEdit} disabled={saving}>{saving ? "Saving…" : isNew ? "Create Deal" : "Save Changes"}</button>
+                <button className={UI.buttonPrimary} onClick={saveEdit} disabled={saving}>{saving ? "Saving..." : isNew ? "Create Deal" : "Save Changes"}</button>
               </div>
             </div>
           </div>
