@@ -43,16 +43,17 @@ type LayoutNode = {
 
 /**
  * Connector groups — one entry per parent that has children.
- * "bus"  = horizontal bar (CEO→level-1)
- * "spine"= vertical rail + stubs (level-1+→deeper)
+ * "bus"     = horizontal bar (CEO→level-1)
+ * "spine"   = vertical rail + stubs (multiple children at depth ≥ 1)
+ * "straight"= simple vertical drop (single-child chain at depth ≥ 1)
  */
 type ConnectorGroup = {
   parentId: string;
-  style: "bus" | "spine";
+  style: "bus" | "spine" | "straight";
   /** Parent bottom-centre */
   px: number;
   py: number;
-  /** Each child's attachment point (top-centre for bus, left-centre for spine) */
+  /** Each child's attachment point */
   children: { id: string; cx: number; cy: number; cardW: number; cardH: number }[];
 };
 
@@ -429,14 +430,20 @@ function computeSubtreeWidths(node: TreeNode, depth: number = 0): number {
   }
 
   // depth ≥ 1 → vertical stack
-  // Children sit to the right of parent's centre + a small gap
   let maxChildW = 0;
   for (const child of node.children) {
     maxChildW = Math.max(maxChildW, computeSubtreeWidths(child, depth + 1));
   }
-  // Need: left half of parent + spine gap + widest child
-  const rightSide = SPINE_OFFSET_X + maxChildW;
-  node.subtreeWidth = Math.max(w, w / 2 + rightSide);
+
+  if (node.children.length === 1) {
+    // Single child → placed directly below parent (no indent).
+    // Column width = max of parent card and child subtree
+    node.subtreeWidth = Math.max(w, maxChildW);
+  } else {
+    // Multiple children → spine + stubs, children sit to right of parent centre
+    const rightSide = SPINE_OFFSET_X + maxChildW;
+    node.subtreeWidth = Math.max(w, w / 2 + rightSide);
+  }
   return node.subtreeWidth;
 }
 
@@ -462,9 +469,13 @@ function positionNodes(node: TreeNode, x: number, y: number, depth: number = 0):
       positionNodes(child, childX, y + h + V_GAP, depth + 1);
       childX += child.subtreeWidth + SIBLING_GAP_X;
     }
+  } else if (node.children.length === 1) {
+    // Single child → place directly below parent, centered in same column
+    // No indent — keeps linear chains compact
+    const child = node.children[0];
+    positionNodes(child, x, y + h + V_GAP, depth + 1);
   } else {
-    // Vertical stack — children placed to the RIGHT of parent's centre
-    // Spine line will drop straight down from node.x + w/2
+    // Multiple children → spine layout, children to the RIGHT of parent centre
     const spineX = node.x + w / 2;
     const childStartX = spineX + SPINE_OFFSET_X;
     let childY = y + h + V_GAP;
@@ -522,9 +533,14 @@ function buildConnectors(node: TreeNode, depth: number = 0): ConnectorGroup[] {
 
   if (node.children.length > 0) {
     const childSize = cardSize(depth + 1);
+    let style: ConnectorGroup["style"];
+    if (depth === 0) style = "bus";
+    else if (node.children.length === 1) style = "straight";
+    else style = "spine";
+
     const group: ConnectorGroup = {
       parentId: node.employee.id,
-      style: depth === 0 ? "bus" : "spine",
+      style,
       px: node.x + w / 2,
       py: node.y + h,
       children: node.children.map(child => ({
@@ -1312,8 +1328,12 @@ export default function OrgChart() {
         for (const child of group.children) {
           ctx.beginPath(); ctx.moveTo(child.cx, midY); ctx.lineTo(child.cx, child.cy); ctx.stroke();
         }
+      } else if (group.style === "straight") {
+        // Straight: single child directly below
+        const child = group.children[0];
+        ctx.beginPath(); ctx.moveTo(group.px, group.py); ctx.lineTo(child.cx, child.cy); ctx.stroke();
       } else {
-        // Spine: straight vertical line from parent centre, horizontal stubs to children
+        // Spine: vertical rail + horizontal stubs to children
         const spineX = group.px;
         const lastChild = group.children[group.children.length - 1];
         const lastStubY = lastChild.cy + lastChild.cardH / 2;
@@ -1707,10 +1727,7 @@ export default function OrgChart() {
                 const lnProps = { fill: "none", stroke: "#64748b", strokeWidth: 2 };
 
                 if (group.style === "bus") {
-                  /*
-                   * Bus connector (CEO → level-1):
-                   *   parent-bottom → down to midY → horizontal bar → drop to each child top
-                   */
+                  /* Bus connector (CEO → level-1): horizontal bar + vertical drops */
                   const firstChild = group.children[0];
                   const lastChild = group.children[group.children.length - 1];
                   const midY = group.py + (firstChild.cy - group.py) / 2;
@@ -1727,29 +1744,24 @@ export default function OrgChart() {
                   );
                 }
 
-                /*
-                 * Spine connector (vertical stack):
-                 *   Straight vertical line drops from parent bottom-centre.
-                 *   At each child level a horizontal stub branches to the child's left edge.
-                 *
-                 *   ┌──Parent──┐
-                 *   └────┬─────┘
-                 *        │
-                 *        ├──── Child1
-                 *        │
-                 *        ├──── Child2
-                 *        │
-                 *        └──── Child3
-                 */
-                const spineX = group.px; // straight down from parent centre
+                if (group.style === "straight") {
+                  /* Straight connector: single child directly below parent */
+                  const child = group.children[0];
+                  return (
+                    <g key={`straight-${group.parentId}`}>
+                      <line x1={group.px} y1={group.py} x2={child.cx} y2={child.cy} {...lnProps} />
+                    </g>
+                  );
+                }
+
+                /* Spine connector: vertical rail + horizontal stubs to each child */
+                const spineX = group.px;
                 const lastChild = group.children[group.children.length - 1];
                 const lastStubY = lastChild.cy + lastChild.cardH / 2;
 
                 return (
                   <g key={`spine-${group.parentId}`}>
-                    {/* Vertical spine: parent bottom → down to last child's mid-height */}
                     <line x1={spineX} y1={group.py} x2={spineX} y2={lastStubY} {...lnProps} />
-                    {/* Horizontal stubs from spine to each child's left edge */}
                     {group.children.map(child => {
                       const stubY = child.cy + child.cardH / 2;
                       const cardLeft = child.cx - child.cardW / 2;
