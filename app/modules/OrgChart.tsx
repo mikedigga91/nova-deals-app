@@ -80,25 +80,25 @@ const SPINE_OFFSET_X = 24;        // How far left of the stacked cards the verti
 type DeptHexColor = { bar: string; barText: string; cardBg: string; cardBorder: string };
 
 const DEPT_HEX_COLORS: Record<string, DeptHexColor> = {
-  Executive: { bar: "#92400e", barText: "#ffffff", cardBg: "#fef3c7", cardBorder: "#f59e0b" },
-  Finance: { bar: "#065f46", barText: "#ffffff", cardBg: "#d1fae5", cardBorder: "#10b981" },
-  Operation: { bar: "#1e40af", barText: "#ffffff", cardBg: "#dbeafe", cardBorder: "#3b82f6" },
-  HR: { bar: "#6b21a8", barText: "#ffffff", cardBg: "#ede9fe", cardBorder: "#a855f7" },
-  "Call Center": { bar: "#9f1239", barText: "#ffffff", cardBg: "#ffe4e6", cardBorder: "#f43f5e" },
-  Sales: { bar: "#155e75", barText: "#ffffff", cardBg: "#cffafe", cardBorder: "#06b6d4" },
-  Contingencies: { bar: "#86198f", barText: "#ffffff", cardBg: "#fae8ff", cardBorder: "#d946ef" },
+  Executive: { bar: "#1e293b", barText: "#ffffff", cardBg: "#ffffff", cardBorder: "#334155" },
+  Finance: { bar: "#334155", barText: "#ffffff", cardBg: "#ffffff", cardBorder: "#475569" },
+  Operation: { bar: "#475569", barText: "#ffffff", cardBg: "#ffffff", cardBorder: "#64748b" },
+  HR: { bar: "#374151", barText: "#ffffff", cardBg: "#ffffff", cardBorder: "#4b5563" },
+  "Call Center": { bar: "#3f3f46", barText: "#ffffff", cardBg: "#ffffff", cardBorder: "#52525b" },
+  Sales: { bar: "#27272a", barText: "#ffffff", cardBg: "#ffffff", cardBorder: "#3f3f46" },
+  Contingencies: { bar: "#44403c", barText: "#ffffff", cardBg: "#ffffff", cardBorder: "#57534e" },
 };
-const DEFAULT_DEPT_HEX: DeptHexColor = { bar: "#475569", barText: "#ffffff", cardBg: "#f8fafc", cardBorder: "#94a3b8" };
+const DEFAULT_DEPT_HEX: DeptHexColor = { bar: "#475569", barText: "#ffffff", cardBg: "#ffffff", cardBorder: "#94a3b8" };
 
 /* Tailwind-based badge colors for dept tabs (kept for tab styling) */
 const DEPT_COLORS: Record<string, { badge: string; badgeText: string }> = {
-  Executive: { badge: "bg-amber-100", badgeText: "text-amber-700" },
-  Finance: { badge: "bg-emerald-100", badgeText: "text-emerald-700" },
-  Operation: { badge: "bg-blue-100", badgeText: "text-blue-700" },
-  HR: { badge: "bg-purple-100", badgeText: "text-purple-700" },
-  "Call Center": { badge: "bg-rose-100", badgeText: "text-rose-700" },
-  Sales: { badge: "bg-cyan-100", badgeText: "text-cyan-700" },
-  Contingencies: { badge: "bg-fuchsia-100", badgeText: "text-fuchsia-700" },
+  Executive: { badge: "bg-slate-100", badgeText: "text-slate-800" },
+  Finance: { badge: "bg-gray-100", badgeText: "text-gray-700" },
+  Operation: { badge: "bg-zinc-100", badgeText: "text-zinc-700" },
+  HR: { badge: "bg-stone-100", badgeText: "text-stone-700" },
+  "Call Center": { badge: "bg-neutral-100", badgeText: "text-neutral-700" },
+  Sales: { badge: "bg-slate-100", badgeText: "text-slate-700" },
+  Contingencies: { badge: "bg-gray-100", badgeText: "text-gray-700" },
 };
 const DEFAULT_DEPT_COLOR = { badge: "bg-slate-100", badgeText: "text-slate-600" };
 const getDeptColor = (dept: string) => DEPT_COLORS[dept] || DEFAULT_DEPT_COLOR;
@@ -1308,12 +1308,12 @@ export default function OrgChart() {
     const ctx = canvas.getContext("2d")!;
     ctx.scale(scale, scale);
 
-    // Powder blue background
-    ctx.fillStyle = "#dbeafe";
+    // Clean white background
+    ctx.fillStyle = "#fafafa";
     ctx.fillRect(0, 0, treeWidth, treeHeight);
 
     // Draw connectors — solid lines matching SVG renderer
-    ctx.strokeStyle = "#64748b";
+    ctx.strokeStyle = "#94a3b8";
     ctx.lineWidth = 2;
     ctx.setLineDash([]);
     for (const group of connectors) {
@@ -1427,7 +1427,7 @@ export default function OrgChart() {
         <div className="px-6 py-3.5">
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center shadow-sm">
+              <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-slate-600 to-slate-800 flex items-center justify-center shadow-sm">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
                   <circle cx="9" cy="7" r="4" />
@@ -1445,7 +1445,7 @@ export default function OrgChart() {
               {/* Search */}
               <div className="relative" ref={searchRef}>
                 <input
-                  className="w-60 border border-slate-200 rounded-lg px-3.5 py-2 text-sm bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-blue-300 pl-9 transition-all"
+                  className="w-60 border border-slate-200 rounded-lg px-3.5 py-2 text-sm bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-slate-400 pl-9 transition-all"
                   placeholder="Search employees…"
                   value={searchQuery}
                   onChange={e => { setSearchQuery(e.target.value); setSearchOpen(true); }}
@@ -1463,7 +1463,7 @@ export default function OrgChart() {
                     {searchResults.map(emp => (
                       <button
                         key={emp.id}
-                        className="w-full text-left px-3 py-2.5 hover:bg-blue-50 flex items-center gap-3 border-b border-slate-50 last:border-0 transition-colors"
+                        className="w-full text-left px-3 py-2.5 hover:bg-slate-50 flex items-center gap-3 border-b border-slate-50 last:border-0 transition-colors"
                         onClick={() => navigateToNode(emp.id)}
                       >
                         <div className="flex-shrink-0">
@@ -1498,7 +1498,7 @@ export default function OrgChart() {
               </button>
 
               <button
-                className="px-4 py-2 rounded-lg bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 shadow-sm transition-all flex items-center gap-1.5"
+                className="px-4 py-2 rounded-lg bg-slate-800 text-white text-xs font-semibold hover:bg-slate-900 shadow-sm transition-all flex items-center gap-1.5"
                 onClick={() => { setEditEmp({ ...blankEmployee }); setEditEmpColor(null); }}
               >
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
@@ -1575,7 +1575,7 @@ export default function OrgChart() {
                     onChange={(e) => setDeptAddValue(e.target.value)}
                     onKeyDown={(e) => { if (e.key === "Enter") addDepartment(); if (e.key === "Escape") { setDeptAddOpen(false); setDeptAddValue(""); } }}
                   />
-                  <button className="text-[11px] font-semibold text-blue-600 hover:text-blue-700" onClick={addDepartment}>Add</button>
+                  <button className="text-[11px] font-semibold text-slate-700 hover:text-slate-900" onClick={addDepartment}>Add</button>
                   <button className="text-[11px] font-semibold text-slate-400 hover:text-slate-600" onClick={() => { setDeptAddOpen(false); setDeptAddValue(""); }}>Cancel</button>
                 </div>
               )}
@@ -1590,13 +1590,13 @@ export default function OrgChart() {
 
                 <div className="flex items-center gap-2">
                   <input
-                    className="w-72 border border-slate-200 rounded-lg px-3 py-1.5 text-[12px] bg-white focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-blue-300 transition-all"
+                    className="w-72 border border-slate-200 rounded-lg px-3 py-1.5 text-[12px] bg-white focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-slate-400 transition-all"
                     placeholder="Input Area: add role to this department"
                     value={roleInput[activeDept] || ""}
                     onChange={(e) => setRoleInput(prev => ({ ...prev, [activeDept]: e.target.value }))}
                     onKeyDown={(e) => { if (e.key === "Enter") addRoleToDept(activeDept); }}
                   />
-                  <button className="px-3 py-1.5 rounded-lg bg-blue-600 text-white text-[12px] font-semibold hover:bg-blue-700 transition-all" onClick={() => addRoleToDept(activeDept)}>
+                  <button className="px-3 py-1.5 rounded-lg bg-slate-800 text-white text-[12px] font-semibold hover:bg-slate-900 transition-all" onClick={() => addRoleToDept(activeDept)}>
                     Add
                   </button>
                 </div>
@@ -1680,7 +1680,7 @@ export default function OrgChart() {
             <div className="text-sm text-slate-500 font-medium">No employees found</div>
             <div className="text-xs text-slate-400 mt-1">Add your first employee to build the org chart</div>
             <button
-              className="mt-4 px-5 py-2.5 rounded-lg bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 shadow-sm transition-all"
+              className="mt-4 px-5 py-2.5 rounded-lg bg-slate-800 text-white text-xs font-semibold hover:bg-slate-900 shadow-sm transition-all"
               onClick={() => { setEditEmp({ ...blankEmployee }); setEditEmpColor(null); }}
             >
               + Add Employee
@@ -1692,9 +1692,9 @@ export default function OrgChart() {
           ref={containerRef}
           className="flex-1 overflow-auto relative select-none"
           style={{
-            /* Powder blue background */
-            backgroundColor: "#dbeafe",
-            backgroundImage: "radial-gradient(circle, #bfdbfe 0.6px, transparent 0.6px)",
+            /* Clean white background with subtle dot grid */
+            backgroundColor: "#fafafa",
+            backgroundImage: "radial-gradient(circle, #e2e2e2 0.6px, transparent 0.6px)",
             backgroundSize: "28px 28px",
           }}
           onWheel={handleWheel}
@@ -1724,7 +1724,7 @@ export default function OrgChart() {
             {/* Connector lines — solid, visible */}
             <svg style={{ position: "absolute", top: 0, left: 0, width: treeWidth, height: treeHeight, pointerEvents: "none" }}>
               {connectors.map(group => {
-                const lnProps = { fill: "none", stroke: "#64748b", strokeWidth: 2 };
+                const lnProps = { fill: "none", stroke: "#94a3b8", strokeWidth: 2 };
 
                 if (group.style === "bus") {
                   /* Bus connector (CEO → level-1): horizontal bar + vertical drops */
@@ -1813,7 +1813,7 @@ export default function OrgChart() {
                     onDragLeave={onZoneDragLeave}
                     onDrop={onDropReorderSibling(emp, "left")}
                   >
-                    <div className={`h-full w-1 rounded-full mx-auto transition-all duration-150 ${isDropLeft ? "bg-blue-500 scale-x-150" : "bg-transparent"}`} />
+                    <div className={`h-full w-1 rounded-full mx-auto transition-all duration-150 ${isDropLeft ? "bg-slate-500 scale-x-150" : "bg-transparent"}`} />
                   </div>
 
                   {/* Right reorder zone */}
@@ -1824,12 +1824,12 @@ export default function OrgChart() {
                     onDragLeave={onZoneDragLeave}
                     onDrop={onDropReorderSibling(emp, "right")}
                   >
-                    <div className={`h-full w-1 rounded-full mx-auto transition-all duration-150 ${isDropRight ? "bg-blue-500 scale-x-150" : "bg-transparent"}`} />
+                    <div className={`h-full w-1 rounded-full mx-auto transition-all duration-150 ${isDropRight ? "bg-slate-500 scale-x-150" : "bg-transparent"}`} />
                   </div>
 
                   {/* Bottom re-parent zone */}
                   <div
-                    className={`absolute left-4 right-4 -bottom-5 h-10 z-30 rounded-b-lg transition-all duration-150 ${isDraggingCard ? "" : "pointer-events-none"} ${isDropChild ? "bg-blue-500/10 border-2 border-dashed border-blue-400 rounded-lg" : ""}`}
+                    className={`absolute left-4 right-4 -bottom-5 h-10 z-30 rounded-b-lg transition-all duration-150 ${isDraggingCard ? "" : "pointer-events-none"} ${isDropChild ? "bg-slate-500/10 border-2 border-dashed border-slate-400 rounded-lg" : ""}`}
                     onDragOver={allowDrop}
                     onDragEnter={onZoneDragEnter(emp.id, "child")}
                     onDragLeave={onZoneDragLeave}
@@ -1841,8 +1841,8 @@ export default function OrgChart() {
                     className={`
                       w-full h-full rounded-xl overflow-hidden
                       transition-all duration-200
-                      ${isHighlighted ? "ring-2 ring-blue-500 ring-offset-2" : ""}
-                      ${isDropChild ? "ring-2 ring-blue-400 ring-offset-1" : ""}
+                      ${isHighlighted ? "ring-2 ring-slate-500 ring-offset-2" : ""}
+                      ${isDropChild ? "ring-2 ring-slate-400 ring-offset-1" : ""}
                     `}
                     style={{
                       backgroundColor: dc.cardBg,
@@ -1860,7 +1860,7 @@ export default function OrgChart() {
                         {emp.position || emp.department || "Employee"}
                       </span>
                       {linkedEmployeeIds.has(emp.id) && (
-                        <span className="text-[8px] font-bold bg-emerald-400 text-white px-1.5 py-0.5 rounded-full leading-none">
+                        <span className="text-[8px] font-bold bg-slate-500 text-white px-1.5 py-0.5 rounded-full leading-none">
                           Portal User
                         </span>
                       )}
@@ -1919,7 +1919,7 @@ export default function OrgChart() {
                     onDragStart={(e) => { e.stopPropagation(); e.preventDefault(); }}
                     className="absolute -right-3.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-white border-2 border-slate-200
                       flex items-center justify-center text-slate-400
-                      hover:bg-blue-50 hover:border-blue-300 hover:text-blue-600
+                      hover:bg-slate-50 hover:border-slate-400 hover:text-slate-700
                       shadow-sm transition-all duration-200 z-40
                       opacity-0 group-hover:opacity-100"
                     onClick={(e) => { e.stopPropagation(); openAddSibling(emp); }}
@@ -1937,7 +1937,7 @@ export default function OrgChart() {
                     onDragStart={(e) => { e.stopPropagation(); e.preventDefault(); }}
                     className="absolute -bottom-3.5 left-1/2 -translate-x-1/2 w-7 h-7 rounded-full bg-white border-2 border-slate-200
                       flex items-center justify-center text-slate-400
-                      hover:bg-blue-50 hover:border-blue-300 hover:text-blue-600
+                      hover:bg-slate-50 hover:border-slate-400 hover:text-slate-700
                       shadow-sm transition-all duration-200 z-40
                       opacity-0 group-hover:opacity-100"
                     onClick={(e) => { e.stopPropagation(); openAddChild(emp); }}
@@ -2024,8 +2024,8 @@ export default function OrgChart() {
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto border border-slate-200" onClick={ev => ev.stopPropagation()}>
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
               <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
                     <circle cx="12" cy="7" r="4"/>
                   </svg>
@@ -2072,7 +2072,7 @@ export default function OrgChart() {
                   <div>
                     <label className="text-[11px] font-medium text-slate-500 block mb-1">Full Name *</label>
                     <input
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-blue-300 transition-all"
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-slate-400 transition-all"
                       value={editEmp.full_name}
                       onChange={e => se("full_name", e.target.value)}
                       placeholder="e.g. John Smith"
@@ -2082,7 +2082,7 @@ export default function OrgChart() {
                   <div>
                     <label className="text-[11px] font-medium text-slate-500 block mb-1">Department</label>
                     <select
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-blue-300 transition-all"
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-slate-400 transition-all"
                       value={editEmp.department}
                       onChange={e => se("department", e.target.value)}
                     >
@@ -2094,7 +2094,7 @@ export default function OrgChart() {
                   <div>
                     <label className="text-[11px] font-medium text-slate-500 block mb-1">Role Picker</label>
                     <select
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-blue-300 transition-all"
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-slate-400 transition-all"
                       value={modalRoleOptions.includes(editEmp.position) ? editEmp.position : ""}
                       onChange={(e) => se("position", e.target.value)}
                       disabled={!editEmp.department}
@@ -2107,7 +2107,7 @@ export default function OrgChart() {
                   <div>
                     <label className="text-[11px] font-medium text-slate-500 block mb-1">Position (custom)</label>
                     <input
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-blue-300 transition-all"
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-slate-400 transition-all"
                       value={editEmp.position}
                       onChange={e => se("position", e.target.value)}
                       placeholder="e.g. Senior Developer"
@@ -2118,7 +2118,7 @@ export default function OrgChart() {
                     <label className="text-[11px] font-medium text-slate-500 block mb-1">Email</label>
                     <input
                       type="email"
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-blue-300 transition-all"
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-slate-400 transition-all"
                       value={editEmp.email}
                       onChange={e => se("email", e.target.value)}
                       placeholder="user@company.com"
@@ -2128,7 +2128,7 @@ export default function OrgChart() {
                   <div>
                     <label className="text-[11px] font-medium text-slate-500 block mb-1">Phone</label>
                     <input
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-blue-300 transition-all"
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-slate-400 transition-all"
                       value={editEmp.phone}
                       onChange={e => se("phone", e.target.value)}
                       placeholder="555-3010"
@@ -2138,7 +2138,7 @@ export default function OrgChart() {
                   <div>
                     <label className="text-[11px] font-medium text-slate-500 block mb-1">Location</label>
                     <input
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-blue-300 transition-all"
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-slate-400 transition-all"
                       value={editEmp.location}
                       onChange={e => se("location", e.target.value)}
                       placeholder="e.g. Miami, FL"
@@ -2149,7 +2149,7 @@ export default function OrgChart() {
                     <label className="text-[11px] font-medium text-slate-500 block mb-1">Date of Birth</label>
                     <input
                       type="date"
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-blue-300 transition-all"
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-slate-400 transition-all"
                       value={editEmp.date_of_birth ?? ""}
                       onChange={e => se("date_of_birth", e.target.value || null)}
                     />
@@ -2159,7 +2159,7 @@ export default function OrgChart() {
                     <label className="text-[11px] font-medium text-slate-500 block mb-1">Hire Date</label>
                     <input
                       type="date"
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-blue-300 transition-all"
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-slate-400 transition-all"
                       value={editEmp.hire_date ?? ""}
                       onChange={e => se("hire_date", e.target.value || null)}
                     />
@@ -2168,7 +2168,7 @@ export default function OrgChart() {
                   <div>
                     <label className="text-[11px] font-medium text-slate-500 block mb-1">Reports To</label>
                     <select
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-blue-300 transition-all"
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-slate-400 transition-all"
                       value={editEmp.manager_id ?? ""}
                       onChange={e => se("manager_id", e.target.value || null)}
                     >
@@ -2215,7 +2215,7 @@ export default function OrgChart() {
               <div className="flex items-center gap-3 p-3 rounded-lg bg-slate-50 border border-slate-100">
                 <label className="relative inline-flex items-center cursor-pointer">
                   <input type="checkbox" checked={editEmp.is_active} onChange={e => se("is_active", e.target.checked)} className="sr-only peer" />
-                  <div className="w-10 h-5.5 bg-slate-200 peer-focus:ring-2 peer-focus:ring-slate-200 rounded-full peer peer-checked:bg-emerald-500 transition-colors" style={{ width: 40, height: 22 }} />
+                  <div className="w-10 h-5.5 bg-slate-200 peer-focus:ring-2 peer-focus:ring-slate-200 rounded-full peer peer-checked:bg-slate-700 transition-colors" style={{ width: 40, height: 22 }} />
                   <div className="absolute left-0.5 top-0.5 w-4.5 h-4.5 bg-white rounded-full shadow-sm peer-checked:translate-x-[18px] transition-transform" style={{ width: 18, height: 18 }} />
                 </label>
                 <div>
@@ -2250,7 +2250,7 @@ export default function OrgChart() {
                   Cancel
                 </button>
                 <button
-                  className="px-5 py-2 rounded-lg bg-blue-600 text-white text-xs font-semibold disabled:opacity-50 hover:bg-blue-700 shadow-sm transition-all"
+                  className="px-5 py-2 rounded-lg bg-slate-800 text-white text-xs font-semibold disabled:opacity-50 hover:bg-slate-900 shadow-sm transition-all"
                   onClick={saveEmployee}
                   disabled={saving}
                 >
