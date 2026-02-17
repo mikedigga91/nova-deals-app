@@ -11,20 +11,18 @@ import Advances from "./modules/Advances";
 import UserManagement from "./modules/UserManagement";
 import Payroll from "./modules/Payroll";
 import OrgChart from "./modules/OrgChart";
-import RepPortal from "./modules/RepPortal";       // ← NEW
 import { useAuth } from "@/lib/useAuth";
 import LoginPage from "./LoginPage";
 import ChangePasswordPage from "./ChangePasswordPage";
 import { supabase } from "@/lib/supabaseClient";
 
-type MenuKey = "sales" | "speed" | "spp" | "cc_commissions" | "payfile" | "advances" | "user_management" | "cc_payroll" | "org_chart" | "rep_portal";
+type MenuKey = "sales" | "speed" | "spp" | "cc_commissions" | "payfile" | "advances" | "user_management" | "cc_payroll" | "org_chart";
 
 type MenuItem = { key: MenuKey; label: string; group: string; icon: string };
 
 const MENUS: MenuItem[] = [
   { key: "sales",           label: "Sales",                   group: "Operations", icon: "📊" },
   { key: "speed",           label: "Speed",                   group: "Operations", icon: "⚡" },
-  { key: "rep_portal",     label: "Sales Rep Portal",        group: "Operations", icon: "💎" },  // ← NEW
   { key: "spp",             label: "SPP Dashboard",           group: "Dashboards", icon: "📈" },
   { key: "cc_commissions",  label: "CC Commissions Overview", group: "Dashboards", icon: "💰" },
   { key: "payfile",         label: "Pay File Generation",     group: "Finance",    icon: "📄" },
@@ -239,7 +237,6 @@ export default function FidelioShellPage() {
                 : active === "user_management" ? <UserManagement />
                 : active === "cc_payroll" ? <Payroll />
                 : active === "org_chart" ? <OrgChart />
-                : active === "rep_portal" ? <RepPortal />
                 : <div className="p-6 text-gray-400">Select a module</div>}
             </div>
           </div>

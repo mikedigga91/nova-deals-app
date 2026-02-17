@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import { usePortalUser } from "@/lib/usePortalUser";
 
 const PORTAL_HEADER_PX = 64;
 
@@ -204,6 +205,8 @@ function MultiSelect({ label, options, selected, onChange, placeholder }: { labe
 export default function Sales() {
   useEffect(() => { const pb = document.body.style.overflow; const ph = document.documentElement.style.overflow; document.body.style.overflow = "hidden"; document.documentElement.style.overflow = "hidden"; return () => { document.body.style.overflow = pb; document.documentElement.style.overflow = ph; }; }, []);
 
+  const { teamNames, effectiveScope, loading: scopeLoading } = usePortalUser();
+
   const [rows, setRows] = useState<DealRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState<string | null>(null);
@@ -232,11 +235,26 @@ export default function Sales() {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const load = useCallback(async () => {
+    // If scope resolves to empty list, short-circuit — user sees nothing
+    if (teamNames !== null && teamNames.length === 0) {
+      setRows([]); setLoading(false); return;
+    }
     setLoading(true); setMsg(null);
     let q = supabase.from("deals_view").select(SELECT_COLUMNS).order("date_closed", { ascending: false }).limit(5000);
     if (startDate) q = q.gte("date_closed", startDate);
     if (endDate) q = q.lte("date_closed", endDate);
-    if (salesReps.length) q = q.in("sales_rep", salesReps);
+    // Apply role-based scope filter (teamNames=null means "all", no filter)
+    if (teamNames !== null && !salesReps.length) {
+      q = q.in("sales_rep", teamNames);
+    } else if (salesReps.length) {
+      // If user picked specific reps AND we have a scope, intersect
+      if (teamNames !== null) {
+        const allowed = salesReps.filter(r => teamNames.includes(r));
+        q = q.in("sales_rep", allowed.length ? allowed : ["__none__"]);
+      } else {
+        q = q.in("sales_rep", salesReps);
+      }
+    }
     if (ccSetters.length) q = q.in("call_center_appointment_setter", ccSetters);
     if (installers.length) q = q.in("company", installers);
     if (statuses.length) q = q.in("status", statuses);
@@ -245,7 +263,7 @@ export default function Sales() {
     if (error) { setRows([]); setMsg(`Error: ${error.message}`); }
     else setRows((data ?? []) as unknown as DealRow[]);
     setLoading(false);
-  }, [startDate, endDate, salesReps, ccSetters, installers, statuses, customerQ]);
+  }, [startDate, endDate, salesReps, ccSetters, installers, statuses, customerQ, teamNames]);
 
   /* Auto-reload on filter change with debounce */
   useEffect(() => {
@@ -254,13 +272,16 @@ export default function Sales() {
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [load]);
 
-  /* Options from loaded rows */
-  const options = useMemo(() => ({
-    salesReps: uniqSorted(rows.map(r => r.sales_rep)),
-    ccSetters: uniqSorted(rows.map(r => r.call_center_appointment_setter)),
-    installers: uniqSorted(rows.map(r => r.company)),
-    statuses: uniqSorted(rows.map(r => r.status)),
-  }), [rows]);
+  /* Options from loaded rows — sales rep dropdown is scoped to allowed names */
+  const options = useMemo(() => {
+    const allReps = uniqSorted(rows.map(r => r.sales_rep));
+    return {
+      salesReps: teamNames !== null ? allReps.filter(r => teamNames.includes(r)) : allReps,
+      ccSetters: uniqSorted(rows.map(r => r.call_center_appointment_setter)),
+      installers: uniqSorted(rows.map(r => r.company)),
+      statuses: uniqSorted(rows.map(r => r.status)),
+    };
+  }, [rows, teamNames]);
 
   /* Sorting */
   function handleSort(idx: number) {
@@ -367,6 +388,17 @@ export default function Sales() {
               </div>
             </div>
             <div className="flex gap-2 items-center">
+              {!scopeLoading && effectiveScope !== "all" && (
+                <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-semibold border ${
+                  effectiveScope === "team" ? "border-purple-200 bg-purple-50 text-purple-700" :
+                  effectiveScope === "own" ? "border-blue-200 bg-blue-50 text-blue-700" :
+                  "border-slate-200 bg-slate-50 text-slate-500"
+                }`}>
+                  {effectiveScope === "team" ? "Showing: Your team's deals" :
+                   effectiveScope === "own" ? "Showing: Your deals only" :
+                   "Showing: No access"}
+                </span>
+              )}
               <span className={UI.pill}>{loading ? "Loading…" : `${rows.length} deals`}</span>
               <button className={UI.buttonGhost} onClick={load}>Refresh</button>
               <button className={UI.buttonGhost} onClick={clearAll}>Clear Filters</button>
