@@ -75,9 +75,25 @@ type SummaryRow = PayfileEntry & {
   paid_nova_nrg_post_p2_rev_amount: number | null;
 };
 
+/** A deal with its payfile entry merged + the paid_date it was found under */
+type PayfileDeal = PayfileEntry & {
+  paid_date: string;
+  pay_type: "p2" | "post_p2";
+  contract_value: number | null;
+  total_adders: number | null;
+  contract_net_price: number | null;
+  revenue: number | null;
+  gross_profit: number | null;
+  agent_paid_out_commission: number | null;
+  paid_nova_nrg_p1_p2_rev_amount: number | null;
+  paid_nova_nrg_post_p2_rev_amount: number | null;
+};
+
 const STATUSES = ["Pending","P2 Ready","Partial P2 Paid","P2 Paid","On Hold","Issue","Canceled"];
 
 const DEAL_COLS = "id,company,customer_name,sales_rep,appointment_setter,kw_system,agent_cost_basis,agent_cost_basis_sold_at,net_price_per_watt,date_closed,contract_value,total_adders,contract_net_price,rev,gross_profit,status,revenue,paid_nova_nrg_p2_rev_date,paid_nova_nrg_p1_p2_rev_amount,paid_nova_nrg_post_p2_date,paid_nova_nrg_post_p2_rev_amount,agent_pay,paid_agent_p2_date,paid_agent_p1_p2_amount,paid_agent_post_p2_date,paid_agent_post_p2_amount";
+
+const SUMMARY_DEAL_COLS = "id,company,customer_name,sales_rep,appointment_setter,contract_value,total_adders,contract_net_price,revenue,gross_profit,agent_pay,paid_nova_nrg_p2_rev_date,paid_nova_nrg_p1_p2_rev_amount,paid_nova_nrg_post_p2_date,paid_nova_nrg_post_p2_rev_amount";
 
 /* ═══════════════════ HELPERS ═══════════════════ */
 
@@ -131,6 +147,61 @@ function injectPrint() {
   document.head.appendChild(el);
 }
 
+/* ═══════════════════ DATA GROUPING ═══════════════════ */
+
+/** Expand setter splits: for entries with a setter, create two rows — rep row + setter row with split install amounts */
+function expandSetterSplits(entries: PayfileEntry[]): PayfileEntry[] {
+  const out: PayfileEntry[] = [];
+  entries.forEach(r => {
+    const setter = r.appointment_setter;
+    const pct = r.rep_split_pct ?? 50;
+    const totalInstall = z(r.install_amount);
+    if (setter && totalInstall > 0) {
+      out.push({ ...r, install_amount: Math.round(totalInstall * pct / 100 * 100) / 100 });
+      out.push({
+        ...r,
+        sales_rep: setter,
+        appointment_setter: null,
+        install_amount: Math.round(totalInstall * (100 - pct) / 100 * 100) / 100,
+        bonus_amount: null, commission: null, credits_additions: null,
+        advance_repayment: null, other_deductions: null, p1_paid_reversal: null,
+        reversal_type: null, note: r.note ? `Split from ${r.sales_rep}` : null,
+      });
+    } else {
+      out.push(r);
+    }
+  });
+  return out;
+}
+
+/** Group PayfileDeal entries by paid_date, then by company within each date */
+function groupByPaidDateThenCompany(deals: PayfileDeal[]): Map<string, Map<string, PayfileDeal[]>> {
+  const byDate = new Map<string, Map<string, PayfileDeal[]>>();
+  deals.forEach(d => {
+    const dateKey = d.paid_date;
+    if (!byDate.has(dateKey)) byDate.set(dateKey, new Map());
+    const coMap = byDate.get(dateKey)!;
+    const coKey = d.company ?? "Unknown";
+    if (!coMap.has(coKey)) coMap.set(coKey, []);
+    coMap.get(coKey)!.push(d);
+  });
+  return byDate;
+}
+
+/** Group PayfileDeal entries by sales_rep, then by company within each rep */
+function groupBySalesRepThenCompany(deals: PayfileDeal[]): Map<string, Map<string, PayfileDeal[]>> {
+  const byRep = new Map<string, Map<string, PayfileDeal[]>>();
+  deals.forEach(d => {
+    const repKey = d.sales_rep ?? "Unknown";
+    if (!byRep.has(repKey)) byRep.set(repKey, new Map());
+    const coMap = byRep.get(repKey)!;
+    const coKey = d.company ?? "Unknown";
+    if (!coMap.has(coKey)) coMap.set(coKey, []);
+    coMap.get(coKey)!.push(d);
+  });
+  return byRep;
+}
+
 /* ═══════════════════ MAIN ═══════════════════ */
 
 export default function Payfile() {
@@ -156,13 +227,13 @@ export default function Payfile() {
               {(["deals","payfile"] as const).map(t=>(
                 <button key={t} onClick={()=>setTab(t)}
                   className={`px-4 py-1.5 rounded-md text-xs font-semibold transition-all ${tab===t?"bg-white text-slate-900 shadow-sm":"text-slate-500 hover:text-slate-700"}`}>
-                  {t==="deals"?"Deal Manager":"Generate Payfile"}
+                  {t==="deals"?"Deal Manager":"Payfiles"}
                 </button>
               ))}
             </div>
           </div>
         </div>
-        {tab==="deals"?<DealManager />:<PayfileGenerator />}
+        {tab==="deals"?<DealManager />:<PayfileViewer />}
       </div>
     </div>
   );
@@ -494,192 +565,345 @@ function DealManager() {
   );
 }
 
-/* ═══════════════════ TAB 2: PAYFILE GENERATOR ═══════════════════ */
+/* ═══════════════════ TAB 2: PAYFILE VIEWER (Batch + Individual) ═══════════════════ */
 
-function PayfileGenerator() {
-  const [payDate,setPayDate]=useState(()=>{const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;});
-  const [payType,setPayType]=useState<"p2"|"post_p2">("p2");
-  const [rows,setRows]=useState<PayfileEntry[]>([]);
+function PayfileViewer() {
+  const [subTab,setSubTab]=useState<"batch"|"individual">("batch");
+  const [allDeals,setAllDeals]=useState<PayfileDeal[]>([]);
   const [loading,setLoading]=useState(false);
   const [msg,setMsg]=useState<string|null>(null);
+  const [filterQuery,setFilterQuery]=useState("");
+  const hasMounted=useRef(false);
 
   /* Advance remaining balances — keyed by rep name */
   const [repAdvBal,setRepAdvBal]=useState<Record<string,number>>({});
   /* General advance remaining balance — FULLY EDITABLE */
   const [genAdvBal,setGenAdvBal]=useState<number>(0);
 
-  const [summaryRows,setSummaryRows]=useState<SummaryRow[]>([]);
-  const [filterQuery,setFilterQuery]=useState("");
-  const hasMounted=useRef(false);
+  /* Track which batch-date or individual-rep is expanded for print/view */
+  const [expandedKey,setExpandedKey]=useState<string|null>(null);
 
-  /* Find all deals paid on the selected date, then pull their payfile entries */
-  async function generate(){
-    setLoading(true);setMsg(null);setRows([]);setSummaryRows([]);setRepAdvBal({});setGenAdvBal(0);
+  /** Load all paid deals from the last ~90 days */
+  const loadData=useCallback(async()=>{
+    setLoading(true);setMsg(null);setAllDeals([]);
 
-    /* Step 1: Query deals_view for deals where the matching payment date = payDate */
-    const dateCol=payType==="p2"?"paid_nova_nrg_p2_rev_date":"paid_nova_nrg_post_p2_date";
-    const {data:deals,error:dErr}=await supabase
+    const cutoff=new Date();
+    cutoff.setDate(cutoff.getDate()-90);
+    const cutoffStr=cutoff.toISOString().substring(0,10);
+
+    /* Fetch deals with P2 paid date in last 90 days */
+    const {data:p2Deals,error:p2Err}=await supabase
       .from("deals_view")
-      .select("id,company,customer_name,sales_rep,appointment_setter,contract_value,total_adders,contract_net_price,revenue,gross_profit,agent_pay,paid_nova_nrg_p1_p2_rev_amount,paid_nova_nrg_post_p2_rev_amount")
-      .eq(dateCol,payDate)
-      .order("company").order("sales_rep");
+      .select(SUMMARY_DEAL_COLS)
+      .gte("paid_nova_nrg_p2_rev_date",cutoffStr)
+      .order("paid_nova_nrg_p2_rev_date",{ascending:false});
 
-    if(dErr){setMsg(`Error querying deals: ${dErr.message}`);setLoading(false);return;}
-    if(!deals||deals.length===0){setMsg(`No deals found with ${payType==="p2"?"P2 Rev Date":"Post P2 Date"} = ${fds(payDate)}. Check that deals have this date filled in.`);setLoading(false);return;}
+    /* Fetch deals with Post P2 paid date in last 90 days */
+    const {data:postP2Deals,error:postP2Err}=await supabase
+      .from("deals_view")
+      .select(SUMMARY_DEAL_COLS)
+      .gte("paid_nova_nrg_post_p2_date",cutoffStr)
+      .order("paid_nova_nrg_post_p2_date",{ascending:false});
 
-    const dealIds=deals.map((d:any)=>d.id);
-    const dealMap=new Map<string,any>();
-    deals.forEach((d:any)=>dealMap.set(d.id,d));
+    if(p2Err||postP2Err){
+      setMsg(`Error loading deals: ${p2Err?.message||postP2Err?.message}`);
+      setLoading(false);return;
+    }
 
-    /* Step 2: Fetch payfile_entries for those deals */
+    /* Deduplicate & collect deal IDs */
+    const dealMap=new Map<string,{deal:any;paid_date:string;pay_type:"p2"|"post_p2"}>();
+    (p2Deals||[]).forEach((d:any)=>{
+      if(d.paid_nova_nrg_p2_rev_date) dealMap.set(d.id+"-p2",{deal:d,paid_date:d.paid_nova_nrg_p2_rev_date,pay_type:"p2"});
+    });
+    (postP2Deals||[]).forEach((d:any)=>{
+      if(d.paid_nova_nrg_post_p2_date) dealMap.set(d.id+"-post_p2",{deal:d,paid_date:d.paid_nova_nrg_post_p2_date,pay_type:"post_p2"});
+    });
+
+    if(dealMap.size===0){
+      setMsg("No paid deals found in the last 90 days.");
+      setLoading(false);return;
+    }
+
+    /* Fetch payfile_entries for all these deals */
+    const allDealIds=[...new Set([...(p2Deals||[]).map((d:any)=>d.id),...(postP2Deals||[]).map((d:any)=>d.id)])];
     const {data:pfData,error:pfErr}=await supabase
       .from("payfile_entries")
       .select("*")
-      .in("deal_id",dealIds)
-      .order("sales_rep").order("date_closed");
+      .in("deal_id",allDealIds);
 
-    if(pfErr){setMsg(`Error querying payfile entries: ${pfErr.message}`);setLoading(false);return;}
-    if(!pfData||pfData.length===0){setMsg(`Found ${deals.length} deals on ${fds(payDate)} but none have payfile entries yet. Create entries in the Deal Manager tab first.`);setLoading(false);return;}
+    if(pfErr){
+      setMsg(`Error loading payfile entries: ${pfErr.message}`);
+      setLoading(false);return;
+    }
 
-    const entries=pfData as PayfileEntry[];
-    setRows(entries);
+    const pfMap=new Map<string,PayfileEntry>();
+    (pfData||[]).forEach((pf:any)=>pfMap.set(pf.deal_id,pf as PayfileEntry));
 
-    /* Step 3: Build summary rows */
-    const summary:SummaryRow[]=entries.map(pf=>{
-      const dl=dealMap.get(pf.deal_id)||{};
-      return {
+    /* Build PayfileDeal array */
+    const result:PayfileDeal[]=[];
+    dealMap.forEach(({deal,paid_date,pay_type},key)=>{
+      const dealId=deal.id;
+      const pf=pfMap.get(dealId);
+      if(!pf) return; // Skip deals without payfile entries
+
+      result.push({
         ...pf,
-        contract_value:dl.contract_value??null,
-        total_adders:dl.total_adders??null,
-        contract_net_price:dl.contract_net_price??null,
-        revenue:dl.revenue??null,
-        gross_profit:dl.gross_profit??null,
-        agent_paid_out_commission:dl.agent_pay??null,
-        paid_nova_nrg_p1_p2_rev_amount:dl.paid_nova_nrg_p1_p2_rev_amount??null,
-        paid_nova_nrg_post_p2_rev_amount:dl.paid_nova_nrg_post_p2_rev_amount??null,
-      };
+        paid_date,
+        pay_type,
+        contract_value:deal.contract_value??null,
+        total_adders:deal.total_adders??null,
+        contract_net_price:deal.contract_net_price??null,
+        revenue:deal.revenue??null,
+        gross_profit:deal.gross_profit??null,
+        agent_paid_out_commission:deal.agent_pay??null,
+        paid_nova_nrg_p1_p2_rev_amount:deal.paid_nova_nrg_p1_p2_rev_amount??null,
+        paid_nova_nrg_post_p2_rev_amount:deal.paid_nova_nrg_post_p2_rev_amount??null,
+      });
     });
-    setSummaryRows(summary);
 
-    /* Step 4: Initialize advance balances */
+    if(result.length===0){
+      setMsg(`Found ${dealMap.size} paid deals but none have payfile entries. Create entries in the Deal Manager tab first.`);
+      setLoading(false);return;
+    }
+
+    setAllDeals(result);
+
+    /* Init advance balances */
     const allNames=new Set<string>();
-    entries.forEach(r=>{
+    result.forEach(r=>{
       if(r.sales_rep) allNames.add(r.sales_rep);
       if(r.appointment_setter && z(r.install_amount)>0) allNames.add(r.appointment_setter);
     });
     setRepAdvBal(prev=>{const next:{[k:string]:number}={};allNames.forEach(r=>{next[r]=0;});return next;});
 
-    const companies=[...new Set(entries.map(r=>r.company).filter(Boolean))];
-    setMsg(`Found ${entries.length} payfile entries across ${companies.join(", ")} for ${payType==="p2"?"P2":"Post P2"} payment date ${fds(payDate)}.`);
+    setMsg(`Loaded ${result.length} payfile entries from the last 90 days.`);
     setLoading(false);
-  }
+  },[]);
 
   /* Auto-load on mount */
   useEffect(()=>{
-    if(!hasMounted.current){ hasMounted.current=true; generate(); }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[]);
+    if(!hasMounted.current){ hasMounted.current=true; loadData(); }
+  },[loadData]);
 
-  /* Expand rows: for entries with a setter, create two rows — rep row + setter row with split install amounts */
-  const expandedRows=useMemo(()=>{
-    const out:PayfileEntry[]=[];
-    rows.forEach(r=>{
-      const setter=r.appointment_setter;
-      const pct=r.rep_split_pct??50;
-      const totalInstall=z(r.install_amount);
-      if(setter && totalInstall>0){
-        out.push({...r,install_amount:Math.round(totalInstall*pct/100*100)/100});
-        out.push({
-          ...r,
-          sales_rep:setter,
-          appointment_setter:null,
-          install_amount:Math.round(totalInstall*(100-pct)/100*100)/100,
-          bonus_amount:null,commission:null,credits_additions:null,
-          advance_repayment:null,other_deductions:null,p1_paid_reversal:null,
-          reversal_type:null,note:r.note?`Split from ${r.sales_rep}`:null,
-        });
-      } else {
-        out.push(r);
-      }
-    });
-    return out;
-  },[rows]);
-
-  /* Filter expanded rows by search query (customer, rep, company) */
-  const filteredRows=useMemo(()=>{
+  /* Filter deals by search query */
+  const filteredDeals=useMemo(()=>{
     const q=filterQuery.trim().toLowerCase();
-    if(!q) return expandedRows;
-    return expandedRows.filter(r=>
+    if(!q) return allDeals;
+    return allDeals.filter(r=>
       (r.customer_name?.toLowerCase().includes(q))||
       (r.sales_rep?.toLowerCase().includes(q))||
       (r.company?.toLowerCase().includes(q))||
       (r.appointment_setter?.toLowerCase().includes(q))
     );
-  },[expandedRows,filterQuery]);
+  },[allDeals,filterQuery]);
 
-  const grp=useMemo(()=>{const m=new Map<string,PayfileEntry[]>();filteredRows.forEach(r=>{const k=r.sales_rep??"Unknown";if(!m.has(k))m.set(k,[]);m.get(k)!.push(r);});return m;},[filteredRows]);
-  const reps=useMemo(()=>Array.from(grp.keys()).sort(),[grp]);
-  const companies=useMemo(()=>[...new Set(rows.map(r=>r.company).filter(Boolean))] as string[],[rows]);
+  /* Batch grouping: by paid_date → company */
+  const batchGrouped=useMemo(()=>groupByPaidDateThenCompany(filteredDeals),[filteredDeals]);
+  const batchDates=useMemo(()=>Array.from(batchGrouped.keys()).sort((a,b)=>b.localeCompare(a)),[batchGrouped]);
 
-  const hasData=filteredRows.length>0;
+  /* Individual grouping: by sales_rep → company */
+  const indivGrouped=useMemo(()=>groupBySalesRepThenCompany(filteredDeals),[filteredDeals]);
+  const indivReps=useMemo(()=>Array.from(indivGrouped.keys()).sort(),[indivGrouped]);
+
+  /* Build data for the expanded payfile (for print rendering) */
+  const expandedData=useMemo(()=>{
+    if(!expandedKey) return null;
+
+    let entries:PayfileDeal[]=[];
+    if(subTab==="batch"){
+      const coMap=batchGrouped.get(expandedKey);
+      if(coMap) coMap.forEach(deals=>entries.push(...deals));
+    } else {
+      const coMap=indivGrouped.get(expandedKey);
+      if(coMap) coMap.forEach(deals=>entries.push(...deals));
+    }
+    if(entries.length===0) return null;
+
+    /* Expand setter splits */
+    const expanded=expandSetterSplits(entries);
+
+    /* Group by sales_rep for print rendering (matches existing print component expectations) */
+    const grpByRep=new Map<string,PayfileEntry[]>();
+    expanded.forEach(r=>{
+      const k=r.sales_rep??"Unknown";
+      if(!grpByRep.has(k))grpByRep.set(k,[]);
+      grpByRep.get(k)!.push(r);
+    });
+    const reps=Array.from(grpByRep.keys()).sort();
+    const companies=[...new Set(entries.map(r=>r.company).filter(Boolean))] as string[];
+
+    /* Build summary rows from the non-expanded entries */
+    const summaryRows:SummaryRow[]=entries.map(pf=>({
+      ...pf,
+      contract_value:pf.contract_value,
+      total_adders:pf.total_adders,
+      contract_net_price:pf.contract_net_price,
+      revenue:pf.revenue,
+      gross_profit:pf.gross_profit,
+      agent_paid_out_commission:pf.agent_paid_out_commission,
+      paid_nova_nrg_p1_p2_rev_amount:pf.paid_nova_nrg_p1_p2_rev_amount,
+      paid_nova_nrg_post_p2_rev_amount:pf.paid_nova_nrg_post_p2_rev_amount,
+    }));
+
+    const paidDate=entries[0]?.paid_date??expandedKey;
+
+    return {
+      entries,
+      expanded,
+      grpByRep,
+      reps,
+      companies,
+      summaryRows,
+      paidDate,
+    };
+  },[expandedKey,subTab,batchGrouped,indivGrouped]);
+
+  const hasData=filteredDeals.length>0;
 
   return (
     <>
       <div className="no-print px-6 py-6 space-y-5">
-        {/* Controls */}
-        <div className="border border-slate-200 rounded-xl p-5 bg-white shadow-sm">
-          <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-4">Generate Commission Sheets</div>
-          <div className="flex flex-wrap gap-5 items-end">
-            <div>
-              <label className="text-[10px] text-slate-500 block mb-1.5">Payment Received Date</label>
-              <input type="date" className="border border-slate-200/70 rounded-lg px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-slate-300" value={payDate} onChange={e=>setPayDate(e.target.value)} />
-            </div>
-            <div>
-              <label className="text-[10px] text-slate-500 block mb-1.5">Payment Type</label>
-              <select className="border border-slate-200/70 rounded-lg px-3.5 py-2.5 text-sm min-w-[180px] focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-slate-300" value={payType} onChange={e=>setPayType(e.target.value as "p2"|"post_p2")}>
-                <option value="p2">P2 Revenue Payment</option>
-                <option value="post_p2">Post P2 Revenue Payment</option>
-              </select>
-            </div>
-            <button className="px-5 py-2.5 rounded-lg bg-slate-900 text-white shadow-sm hover:bg-slate-800 active:scale-[0.99] transition text-xs font-semibold disabled:opacity-50" onClick={generate} disabled={loading}>
-              {loading?"Searching…":"Generate"}
-            </button>
-            {hasData&&<button className="px-5 py-2.5 rounded-lg border text-xs font-semibold hover:bg-slate-50" onClick={()=>window.print()}>🖨️ Print</button>}
+        {/* Sub-tab toggle: Batch / Individual */}
+        <div className="flex items-center gap-4">
+          <div className="flex bg-slate-100 rounded-lg p-0.5">
+            {(["batch","individual"] as const).map(t=>(
+              <button key={t} onClick={()=>{setSubTab(t);setExpandedKey(null);}}
+                className={`px-4 py-1.5 rounded-md text-xs font-semibold transition-all ${subTab===t?"bg-white text-slate-900 shadow-sm":"text-slate-500 hover:text-slate-700"}`}>
+                {t==="batch"?"Batch Payfiles":"Individual Payfiles"}
+              </button>
+            ))}
           </div>
-          <p className="text-[10px] text-slate-400 mt-3">
-            Finds all deals where {payType==="p2"?"Rev P2 Date":"Post P2 Date"} matches the selected date, then loads their payfile entries.
-          </p>
+          <button className="px-4 py-2 rounded-lg bg-slate-900 text-white shadow-sm hover:bg-slate-800 active:scale-[0.99] transition text-xs font-semibold disabled:opacity-50" onClick={loadData} disabled={loading}>
+            {loading?"Loading…":"↻ Refresh"}
+          </button>
+          {expandedData&&<button className="px-4 py-2 rounded-lg border text-xs font-semibold hover:bg-slate-50" onClick={()=>window.print()}>🖨️ Print</button>}
         </div>
 
         {msg&&<div className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">{msg}</div>}
 
-        {/* Search / Filter loaded data */}
-        {expandedRows.length>0&&(
+        {/* Filter */}
+        {allDeals.length>0&&(
           <div>
-            <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Filter Results</label>
+            <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Filter</label>
             <input className="w-full max-w-md border border-slate-200/70 rounded-lg px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-slate-300"
-              placeholder="Type to filter by customer name, rep, company, or setter…" value={filterQuery} onChange={e=>setFilterQuery(e.target.value)} />
-            <p className="text-[10px] text-slate-400 mt-1">{filteredRows.length} of {expandedRows.length} entries shown</p>
+              placeholder="Filter by customer name, rep, company, or setter…" value={filterQuery} onChange={e=>{setFilterQuery(e.target.value);setExpandedKey(null);}} />
+            <p className="text-[10px] text-slate-400 mt-1">{filteredDeals.length} of {allDeals.length} entries shown</p>
           </div>
         )}
 
-        {hasData&&(
-          <div className="flex flex-wrap gap-2 items-center">
-            <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Results:</span>
-            {companies.map(c=>(
-              <span key={c} className="inline-flex items-center gap-1 bg-slate-100 border rounded-full px-3 py-1 text-xs font-medium">{c}</span>
-            ))}
-            <span className="text-[10px] text-slate-400">{rows.length} deals · {filteredRows.length} entries{filterQuery?" (filtered)":""} · {reps.length} reps</span>
+        {/* ═══ BATCH VIEW ═══ */}
+        {subTab==="batch"&&hasData&&(
+          <div className="space-y-2">
+            <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Payfiles by Paid Date</div>
+            {batchDates.map(date=>{
+              const coMap=batchGrouped.get(date)!;
+              const companies=Array.from(coMap.keys()).sort();
+              const totalEntries=Array.from(coMap.values()).reduce((a,v)=>a+v.length,0);
+              const totalInstall=Array.from(coMap.values()).flat().reduce((a,r)=>a+z(r.install_amount),0);
+              const isExpanded=expandedKey===date;
+
+              return (
+                <div key={date} className={`border rounded-xl overflow-hidden transition-all ${isExpanded?"border-slate-400 shadow-md":"border-slate-200 shadow-sm"}`}>
+                  <button
+                    className={`w-full flex items-center justify-between px-5 py-3.5 text-left transition-colors ${isExpanded?"bg-slate-800 text-white":"bg-white hover:bg-slate-50"}`}
+                    onClick={()=>setExpandedKey(isExpanded?null:date)}
+                  >
+                    <div className="flex items-center gap-4">
+                      <span className={`text-sm font-bold ${isExpanded?"text-white":"text-slate-800"}`}>{fd(date)}</span>
+                      <div className="flex gap-1.5">
+                        {companies.map(co=>(
+                          <span key={co} className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-medium ${isExpanded?"bg-white/20 text-white":"bg-slate-100 text-slate-600"}`}>
+                            {co} ({coMap.get(co)!.length})
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <span className={`text-xs font-medium ${isExpanded?"text-slate-300":"text-slate-400"}`}>{totalEntries} entries · {moneyZ(totalInstall)}</span>
+                      <svg className={`w-4 h-4 transition-transform ${isExpanded?"rotate-180":""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
+                    </div>
+                  </button>
+
+                  {/* Expanded preview */}
+                  {isExpanded&&(
+                    <div className="px-5 py-4 bg-slate-50 border-t border-slate-200">
+                      {companies.length===1?(
+                        /* Single company — one table */
+                        <BatchCompanyTable entries={coMap.get(companies[0])!} company={null} />
+                      ):(
+                        /* Multiple companies — separate tables */
+                        companies.map(co=>(
+                          <BatchCompanyTable key={co} entries={coMap.get(co)!} company={co} />
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
 
-        {/* Advance Remaining Balances — per rep + editable general */}
-        {hasData&&reps.length>0&&(
+        {/* ═══ INDIVIDUAL VIEW ═══ */}
+        {subTab==="individual"&&hasData&&(
+          <div className="space-y-2">
+            <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Payfiles by Sales Rep</div>
+            {indivReps.map(rep=>{
+              const coMap=indivGrouped.get(rep)!;
+              const companies=Array.from(coMap.keys()).sort();
+              const totalEntries=Array.from(coMap.values()).reduce((a,v)=>a+v.length,0);
+              const totalInstall=Array.from(coMap.values()).flat().reduce((a,r)=>a+z(r.install_amount),0);
+              const isExpanded=expandedKey===rep;
+
+              return (
+                <div key={rep} className={`border rounded-xl overflow-hidden transition-all ${isExpanded?"border-slate-400 shadow-md":"border-slate-200 shadow-sm"}`}>
+                  <button
+                    className={`w-full flex items-center justify-between px-5 py-3.5 text-left transition-colors ${isExpanded?"bg-slate-800 text-white":"bg-white hover:bg-slate-50"}`}
+                    onClick={()=>setExpandedKey(isExpanded?null:rep)}
+                  >
+                    <div className="flex items-center gap-4">
+                      <span className={`text-sm font-bold ${isExpanded?"text-white":"text-slate-800"}`}>{rep}</span>
+                      <div className="flex gap-1.5">
+                        {companies.map(co=>(
+                          <span key={co} className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-medium ${isExpanded?"bg-white/20 text-white":"bg-slate-100 text-slate-600"}`}>
+                            {co} ({coMap.get(co)!.length})
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <span className={`text-xs font-medium ${isExpanded?"text-slate-300":"text-slate-400"}`}>{totalEntries} entries · {moneyZ(totalInstall)}</span>
+                      <svg className={`w-4 h-4 transition-transform ${isExpanded?"rotate-180":""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
+                    </div>
+                  </button>
+
+                  {/* Expanded preview */}
+                  {isExpanded&&(
+                    <div className="px-5 py-4 bg-slate-50 border-t border-slate-200">
+                      {companies.length===1?(
+                        /* Single company — one table */
+                        <BatchCompanyTable entries={coMap.get(companies[0])!} company={null} />
+                      ):(
+                        /* Multiple companies — separate tables */
+                        companies.map(co=>(
+                          <BatchCompanyTable key={co} entries={coMap.get(co)!} company={co} />
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Advance Remaining Balances */}
+        {expandedData&&expandedData.reps.length>0&&(
           <div className="border border-slate-200 rounded-xl p-5 bg-white shadow-sm">
             <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Advance Remaining Balances</div>
             <p className="text-[10px] text-slate-400 mb-4">Set per-rep and general balances before printing.</p>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {reps.map(rep=>(
+              {expandedData.reps.map(rep=>(
                 <div key={rep}>
                   <label className="text-[10px] font-medium text-slate-500 block mb-1">{rep}</label>
                   <input className="w-full border border-slate-200/70 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-slate-300"
@@ -699,32 +923,41 @@ function PayfileGenerator() {
             </div>
           </div>
         )}
+
+        {/* Loading state */}
+        {loading&&<div className="text-center py-10 text-slate-400 text-sm">Loading payfile data…</div>}
+
+        {/* Empty state */}
+        {!loading&&allDeals.length===0&&!msg&&(
+          <div className="text-center py-10 text-slate-400 text-sm">No payfile data loaded.</div>
+        )}
       </div>
 
-      {hasData&&(
+      {/* ═══ PRINT SECTION ═══ */}
+      {expandedData&&(
         <div id="pf-print" className="px-6">
           {/* GENERAL COMMISSIONS SHEET */}
           <div className="pf-sheet" style={{marginBottom:"48px",paddingBottom:"24px",borderBottom:"3px solid #d1d5db"}}>
-            <PH d={fds(payDate)} t="GENERAL COMMISSIONS SHEET" />
+            <PH d={fds(expandedData.paidDate)} t={subTab==="batch"?"GENERAL COMMISSIONS SHEET":`SALES COMMISSIONS — ${expandedKey}`} />
             <table style={tbl}>
               <thead><PHR /></thead>
               <tbody>
-                {reps.map(rep=><PRB key={rep} rows={grp.get(rep)!} sp={true} advBal={repAdvBal[rep]??0} />)}
-                <PSR rows={filteredRows} lb="Grand Subtotals:" />
+                {expandedData.reps.map(rep=><PRB key={rep} rows={expandedData.grpByRep.get(rep)!} sp={true} advBal={repAdvBal[rep]??0} />)}
+                <PSR rows={expandedData.expanded} lb="Grand Subtotals:" />
               </tbody>
             </table>
-            <PGF rows={filteredRows} reps={reps} grp={grp} repAdvBal={repAdvBal} genAdvBal={genAdvBal} summaryRows={summaryRows} companies={companies} />
+            <PGF rows={expandedData.expanded} reps={expandedData.reps} grp={expandedData.grpByRep} repAdvBal={repAdvBal} genAdvBal={genAdvBal} summaryRows={expandedData.summaryRows} companies={expandedData.companies} />
           </div>
 
-          {/* INDIVIDUAL SHEETS */}
-          {reps.map((rep,ri)=>(
-            <div key={`i-${rep}`} className="pf-sheet" style={{marginBottom:ri<reps.length-1?"48px":"0",paddingBottom:ri<reps.length-1?"24px":"0",borderBottom:ri<reps.length-1?"3px solid #d1d5db":"none"}}>
-              <PH d={fds(payDate)} t={`SALES COMMISSIONS SHEET — ${rep}`} />
+          {/* INDIVIDUAL SHEETS (one per rep) */}
+          {expandedData.reps.map((rep,ri)=>(
+            <div key={`i-${rep}`} className="pf-sheet" style={{marginBottom:ri<expandedData.reps.length-1?"48px":"0",paddingBottom:ri<expandedData.reps.length-1?"24px":"0",borderBottom:ri<expandedData.reps.length-1?"3px solid #d1d5db":"none"}}>
+              <PH d={fds(expandedData.paidDate)} t={`SALES COMMISSIONS SHEET — ${rep}`} />
               <table style={tbl}>
                 <thead><PHR /></thead>
-                <tbody><PRB rows={grp.get(rep)!} sp={false} advBal={repAdvBal[rep]??0} /></tbody>
+                <tbody><PRB rows={expandedData.grpByRep.get(rep)!} sp={false} advBal={repAdvBal[rep]??0} /></tbody>
               </table>
-              <PRF rows={grp.get(rep)!} advBal={repAdvBal[rep]??0} />
+              <PRF rows={expandedData.grpByRep.get(rep)!} advBal={repAdvBal[rep]??0} />
             </div>
           ))}
         </div>
@@ -733,7 +966,69 @@ function PayfileGenerator() {
   );
 }
 
-/* ═══════════════════ PRINT TABLE COMPONENTS ═══════════════════
+/* ═══════════════════ BATCH/INDIVIDUAL PREVIEW TABLE ═══════════════════ */
+
+/** A simple preview table for a company's entries within the batch/individual expandable row */
+function BatchCompanyTable({entries,company}:{entries:PayfileDeal[];company:string|null}){
+  const x=pfs(entries);
+  const net=pfn(x);
+
+  return (
+    <div className={company?"mb-4":"mb-0"}>
+      {company&&<div className="text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-2 flex items-center gap-2">
+        <span className="w-2 h-2 rounded-full bg-slate-400"></span>{company}
+      </div>}
+      <div className="border border-slate-200 rounded-lg overflow-hidden bg-white">
+        <table className="w-full text-[11px]">
+          <thead><tr className="bg-slate-700 text-white">
+            <th className="px-2 py-1.5 text-left font-semibold text-[10px]">Customer</th>
+            <th className="px-2 py-1.5 text-left font-semibold text-[10px]">Sales Rep</th>
+            <th className="px-2 py-1.5 text-left font-semibold text-[10px]">Setter</th>
+            <th className="px-2 py-1.5 text-right font-semibold text-[10px]">kW</th>
+            <th className="px-2 py-1.5 text-center font-semibold text-[10px]">Date Closed</th>
+            <th className="px-2 py-1.5 text-right font-semibold text-[10px]">Install</th>
+            <th className="px-2 py-1.5 text-right font-semibold text-[10px]">Bonus</th>
+            <th className="px-2 py-1.5 text-right font-semibold text-[10px]">Commission</th>
+            <th className="px-2 py-1.5 text-right font-semibold text-[10px]">Credits</th>
+            <th className="px-2 py-1.5 text-left font-semibold text-[10px]">Type</th>
+          </tr></thead>
+          <tbody>
+            {entries.map((r,i)=>(
+              <tr key={r.deal_id+"-"+i} className={`border-t border-slate-100 ${i%2===1?"bg-slate-50":""}`}>
+                <td className="px-2 py-1.5">{s(r.customer_name)}</td>
+                <td className="px-2 py-1.5">{s(r.sales_rep)}</td>
+                <td className="px-2 py-1.5">{s(r.appointment_setter)}</td>
+                <td className="px-2 py-1.5 text-right">{nf(r.kw_system)}</td>
+                <td className="px-2 py-1.5 text-center">{fds(r.date_closed)}</td>
+                <td className="px-2 py-1.5 text-right">{money(r.install_amount)}</td>
+                <td className="px-2 py-1.5 text-right">{money(r.bonus_amount)}</td>
+                <td className="px-2 py-1.5 text-right">{money(r.commission)}</td>
+                <td className="px-2 py-1.5 text-right">{money(r.credits_additions)}</td>
+                <td className="px-2 py-1.5">
+                  <span className={`inline-flex px-2 py-0.5 rounded text-[9px] font-medium ${r.pay_type==="p2"?"bg-slate-100 text-slate-700":"bg-slate-50 text-slate-500"}`}>
+                    {r.pay_type==="p2"?"P2":"Post P2"}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr className="bg-slate-800 text-white font-semibold text-[10px]">
+              <td className="px-2 py-1.5" colSpan={5}>Totals ({entries.length} entries)</td>
+              <td className="px-2 py-1.5 text-right">{moneyZ(x.inst)}</td>
+              <td className="px-2 py-1.5 text-right">{moneyZ(x.bon)}</td>
+              <td className="px-2 py-1.5 text-right">{moneyZ(x.com)}</td>
+              <td className="px-2 py-1.5 text-right">{moneyZ(x.cred)}</td>
+              <td className="px-2 py-1.5 text-right font-bold">{moneyZ(net)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════ PRINT TABLE COMPONENTS
    Design: Muted palette, precision column sizing.
 
    Column types & alignment:
