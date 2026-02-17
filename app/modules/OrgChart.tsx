@@ -39,6 +39,21 @@ type LayoutNode = {
   depth: number;
   cardW: number;   // per-node width  (CEO is larger)
   cardH: number;   // per-node height (CEO is larger)
+}
+
+/**
+ * Connector groups — one entry per parent that has children.
+ * "bus"  = horizontal bar (CEO→level-1)
+ * "spine"= vertical rail + stubs (level-1+→deeper)
+ */
+type ConnectorGroup = {
+  parentId: string;
+  style: "bus" | "spine";
+  /** Parent bottom-centre */
+  px: number;
+  py: number;
+  /** Each child's attachment point (top-centre for bus, left-centre for spine) */
+  children: { id: string; cx: number; cy: number; cardW: number; cardH: number }[];
 };
 
 /* Dept config types (optional tables) */
@@ -54,11 +69,11 @@ const CARD_H = 164;               // Standard card height
 const CEO_CARD_W = CARD_W + 40;   // 304px — wider for the root/CEO card
 const CEO_CARD_H = CARD_H + 20;   // 184px — taller for the root/CEO card
 
-/* ── Layout spacing (tweak these to adjust spacing) ── */
+/* ── Layout spacing (tweak these to adjust the chart) ── */
 const SIBLING_GAP_X = 56;         // Horizontal gap between level-1 sibling columns
 const STACK_GAP_Y   = 28;         // Vertical gap between stacked sub-cards (depth ≥ 2)
-const STACK_INDENT_X = 0;         // Optional horizontal indent of vertical stack under parent (0 = centered)
 const V_GAP = 72;                 // Vertical gap between a parent and the first row of children
+const SPINE_OFFSET_X = 24;        // How far left of the stacked cards the vertical spine line sits
 
 /* Department hex colors for card styling */
 type DeptHexColor = { bar: string; barText: string; cardBg: string; cardBorder: string };
@@ -354,18 +369,31 @@ function buildTree(employees: Employee[], collapsedSet: Set<string>, filterDept:
 }
 
 /*
- * ══════════════════════════════════════════════════════════════════
- *  LAYOUT ALGORITHM — "Horizontal siblings, vertical stacks"
+ * ══════════════════════════════════════════════════════════════════════
+ *  LAYOUT ALGORITHM — "Horizontal level-1, vertical stacks deeper"
  *
- *  • Level 0 (CEO/root): single centered card, uses CEO_CARD_W / CEO_CARD_H
- *  • Level 1 (direct reports): arranged HORIZONTALLY side-by-side
- *  • Level ≥ 2 (all deeper descendants): stacked VERTICALLY in a
- *    single column beneath their parent — saves horizontal space
+ *  Matches the reference org-chart image exactly:
  *
- *  Each level-1 node "owns" a vertical column whose width = CARD_W
- *  (+ padding) and whose height grows with the number of stacked
- *  descendants.  Connector lines use orthogonal right-angle paths.
- * ══════════════════════════════════════════════════════════════════
+ *    ┌─────────┐                          ← depth 0: CEO (big card)
+ *    └────┬────┘
+ *    ─────┼─────────────────── bus line    ← horizontal bar across level-1
+ *    ┌────┴───┐  ┌────┴───┐  ┌────┴───┐
+ *    │Employee1│  │Employee2│  │Employee3│  ← depth 1: horizontal siblings
+ *    └────┬───┘  └────┬───┘  └────┬───┘
+ *         │           │           │        ← each owns a VERTICAL column
+ *      ┌──┤        ┌──┤        ┌──┤
+ *      │Sub1│      │Sub1│      │Sub1│      ← depth ≥ 2: stacked vertically
+ *      ├──┤        ├──┤        ├──┤          with a left-side spine line
+ *      │Sub2│      │Sub2│      │Sub2│
+ *      └──┘        └──┘        ├──┤
+ *                              │Sub3│
+ *                              └──┘
+ *
+ *  Connector styles:
+ *    • "bus"  — CEO to level-1 children: horizontal bar + vertical drops
+ *    • "spine"— level-1+ to deeper children: vertical rail on the left
+ *              with short horizontal stubs to each card
+ * ══════════════════════════════════════════════════════════════════════
  */
 
 /** Card dimensions for a given depth (CEO = depth 0 gets the big card) */
@@ -377,9 +405,8 @@ function cardSize(depth: number): { w: number; h: number } {
 
 /**
  * Compute the width each column/subtree needs.
- * • depth 0 (CEO): width = sum of children column widths + gaps (horizontal)
- * • depth 1 (direct reports): each is a column — width = max(CARD_W, widest descendant subtree)
- * • depth ≥ 2: vertical stack — width = max(CARD_W, widest child subtree)
+ *  - depth 0 (CEO): children are horizontal → sum of children widths + gaps
+ *  - depth ≥ 1: children stacked vertically → width = widest descendant + spine offset
  */
 function computeSubtreeWidths(node: TreeNode, depth: number = 0): number {
   const { w } = cardSize(depth);
@@ -390,7 +417,7 @@ function computeSubtreeWidths(node: TreeNode, depth: number = 0): number {
   }
 
   if (depth === 0) {
-    // CEO: children are horizontal, so sum their widths + gaps
+    // CEO's children lay out horizontally
     let total = 0;
     for (const child of node.children) total += computeSubtreeWidths(child, depth + 1);
     total += (node.children.length - 1) * SIBLING_GAP_X;
@@ -398,55 +425,55 @@ function computeSubtreeWidths(node: TreeNode, depth: number = 0): number {
     return node.subtreeWidth;
   }
 
-  // depth ≥ 1: vertical stack — column width = widest child subtree
+  // depth ≥ 1 → vertical stack.  Column must fit the spine offset + widest child subtree
   let maxChildW = 0;
   for (const child of node.children) {
     maxChildW = Math.max(maxChildW, computeSubtreeWidths(child, depth + 1));
   }
-  node.subtreeWidth = Math.max(w, maxChildW + STACK_INDENT_X);
+  // The column needs: spine offset + child cards, plus the parent card itself
+  node.subtreeWidth = Math.max(w, SPINE_OFFSET_X + maxChildW);
   return node.subtreeWidth;
 }
 
 /**
- * Position every node (x, y) after subtreeWidths have been computed.
- * • depth 0: centred in its subtree
- * • depth 1 (children of CEO): spread horizontally, each centred in its column
- * • depth ≥ 2: stacked vertically under their parent, centred in the column
+ * Position every node.
+ *  - depth 0: centred in its subtree
+ *  - depth 0→children: spread horizontally (each centred in its column)
+ *  - depth ≥ 1→children: stacked vertically, left-aligned with spine offset
  */
 function positionNodes(node: TreeNode, x: number, y: number, depth: number = 0): void {
   const { w, h } = cardSize(depth);
 
-  // Centre this node within its subtree width
+  // Centre this node within its subtree band
   node.x = x + node.subtreeWidth / 2 - w / 2;
   node.y = y;
 
   if (node.children.length === 0) return;
 
   if (depth === 0) {
-    // CEO's children: lay them out horizontally
+    // Horizontal layout for level-1 children
     let childX = x;
     for (const child of node.children) {
       positionNodes(child, childX, y + h + V_GAP, depth + 1);
       childX += child.subtreeWidth + SIBLING_GAP_X;
     }
   } else {
-    // depth ≥ 1: stack children vertically
+    // Vertical stack for depth ≥ 1 children
+    // Cards are placed after a spine offset from the left edge of the subtree band
     let childY = y + h + V_GAP;
     for (const child of node.children) {
-      // Centre child in the parent's subtree width, optionally indented
-      positionNodes(child, x + STACK_INDENT_X, childY, depth + 1);
-      const childTotalH = getSubtreeHeight(child, depth + 1);
-      childY += childTotalH + STACK_GAP_Y;
+      positionNodes(child, x + SPINE_OFFSET_X, childY, depth + 1);
+      const subtreeH = getSubtreeHeight(child, depth + 1);
+      childY += subtreeH + STACK_GAP_Y;
     }
   }
 }
 
-/** Total pixel height of a subtree (used for vertical stack spacing) */
+/** Total pixel height of a node's subtree (for vertical stack spacing) */
 function getSubtreeHeight(node: TreeNode, depth: number): number {
   const { h } = cardSize(depth);
   if (node.children.length === 0) return h;
 
-  // All children are stacked vertically (depth ≥ 1)
   let childrenH = 0;
   for (let i = 0; i < node.children.length; i++) {
     childrenH += getSubtreeHeight(node.children[i], depth + 1);
@@ -456,9 +483,8 @@ function getSubtreeHeight(node: TreeNode, depth: number): number {
 }
 
 /**
- * Flatten the positioned tree into a flat LayoutNode[] for rendering.
- * Each node carries its own cardW/cardH so the renderer can size
- * it correctly (CEO vs everyone else).
+ * Flatten tree → flat LayoutNode[] for rendering.
+ * parentX/parentY point to the parent's bottom-centre.
  */
 function flattenTree(node: TreeNode, parentX: number | null, parentY: number | null, depth: number): LayoutNode[] {
   const { w, h } = cardSize(depth);
@@ -478,19 +504,59 @@ function flattenTree(node: TreeNode, parentX: number | null, parentY: number | n
   return result;
 }
 
-function layoutTree(employees: Employee[], collapsedSet: Set<string>, filterDept: string | null): { nodes: LayoutNode[]; width: number; height: number } {
+/**
+ * Build connector groups — one group per parent.
+ *  "bus"  = CEO→level-1 (horizontal bar + vertical drops)
+ *  "spine"= depth≥1→children (vertical rail on left + horizontal stubs)
+ */
+function buildConnectors(node: TreeNode, depth: number = 0): ConnectorGroup[] {
+  const groups: ConnectorGroup[] = [];
+  const { w, h } = cardSize(depth);
+
+  if (node.children.length > 0) {
+    const childSize = cardSize(depth + 1);
+    const group: ConnectorGroup = {
+      parentId: node.employee.id,
+      style: depth === 0 ? "bus" : "spine",
+      px: node.x + w / 2,
+      py: node.y + h,
+      children: node.children.map(child => ({
+        id: child.employee.id,
+        cx: child.x + childSize.w / 2,
+        cy: child.y,
+        cardW: childSize.w,
+        cardH: childSize.h,
+      })),
+    };
+    groups.push(group);
+
+    for (const child of node.children) {
+      groups.push(...buildConnectors(child, depth + 1));
+    }
+  }
+
+  return groups;
+}
+
+function layoutTree(employees: Employee[], collapsedSet: Set<string>, filterDept: string | null): {
+  nodes: LayoutNode[];
+  connectors: ConnectorGroup[];
+  width: number;
+  height: number;
+} {
   const root = buildTree(employees, collapsedSet, filterDept);
-  if (!root) return { nodes: [], width: 0, height: 0 };
+  if (!root) return { nodes: [], connectors: [], width: 0, height: 0 };
   computeSubtreeWidths(root, 0);
   positionNodes(root, 80, 80, 0);
   const nodes = flattenTree(root, null, null, 0);
+  const connectors = buildConnectors(root, 0);
 
   let maxX = 0, maxY = 0;
   for (const n of nodes) {
     if (n.x + n.cardW > maxX) maxX = n.x + n.cardW;
     if (n.y + n.cardH > maxY) maxY = n.y + n.cardH;
   }
-  return { nodes, width: maxX + 80, height: maxY + 80 };
+  return { nodes, connectors, width: maxX + 80, height: maxY + 80 };
 }
 
 /* ═══════════════════ MAIN COMPONENT ═══════════════════ */
@@ -649,7 +715,7 @@ export default function OrgChart() {
   }, [customEmpColors]);
 
   /* ── Layout ── */
-  const { nodes, width: treeWidth, height: treeHeight } = useMemo(
+  const { nodes, connectors, width: treeWidth, height: treeHeight } = useMemo(
     () => layoutTree(employees, collapsedSet, filterDept),
     [employees, collapsedSet, filterDept]
   );
@@ -1223,25 +1289,42 @@ export default function OrgChart() {
     ctx.fillStyle = "#c8a882";
     ctx.fillRect(0, 0, treeWidth, treeHeight);
 
-    for (const node of nodes) {
-      if (node.parentX != null && node.parentY != null) {
+    // Draw connectors using the same logic as the SVG renderer
+    ctx.strokeStyle = "#8b7355";
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([6, 3]);
+    ctx.globalAlpha = 0.6;
+    for (const group of connectors) {
+      if (group.style === "bus") {
+        const firstChild = group.children[0];
+        const lastChild = group.children[group.children.length - 1];
+        const midY = group.py + (firstChild.cy - group.py) / 2;
+        ctx.beginPath(); ctx.moveTo(group.px, group.py); ctx.lineTo(group.px, midY); ctx.stroke();
+        if (group.children.length > 1) {
+          ctx.beginPath(); ctx.moveTo(firstChild.cx, midY); ctx.lineTo(lastChild.cx, midY); ctx.stroke();
+        }
+        for (const child of group.children) {
+          ctx.beginPath(); ctx.moveTo(child.cx, midY); ctx.lineTo(child.cx, child.cy); ctx.stroke();
+        }
+      } else {
+        const spineX = group.children[0].cx - group.children[0].cardW / 2 - SPINE_OFFSET_X;
+        const firstStubY = group.children[0].cy + group.children[0].cardH / 2;
+        const lastStubY = group.children[group.children.length - 1].cy + group.children[group.children.length - 1].cardH / 2;
         ctx.beginPath();
-        ctx.strokeStyle = "#8b7355";
-        ctx.lineWidth = 1.5;
-        ctx.setLineDash([6, 3]);
-        const sx = node.parentX;
-        const sy = node.parentY;
-        const ex = node.x + node.cardW / 2;
-        const ey = node.y;
-        const midY = sy + (ey - sy) / 2;
-        ctx.moveTo(sx, sy);
-        ctx.lineTo(sx, midY);
-        ctx.lineTo(ex, midY);
-        ctx.lineTo(ex, ey);
-        ctx.stroke();
+        ctx.moveTo(group.px, group.py); ctx.lineTo(group.px, group.py + 16);
+        ctx.lineTo(spineX, group.py + 16); ctx.lineTo(spineX, firstStubY); ctx.stroke();
+        if (group.children.length > 1) {
+          ctx.beginPath(); ctx.moveTo(spineX, firstStubY); ctx.lineTo(spineX, lastStubY); ctx.stroke();
+        }
+        for (const child of group.children) {
+          const stubY = child.cy + child.cardH / 2;
+          const cardLeft = child.cx - child.cardW / 2;
+          ctx.beginPath(); ctx.moveTo(spineX, stubY); ctx.lineTo(cardLeft, stubY); ctx.stroke();
+        }
       }
     }
-    ctx.setLineDash([]); // reset dash for card rendering
+    ctx.globalAlpha = 1.0;
+    ctx.setLineDash([]);
 
     for (const node of nodes) {
       const { x, y, employee: emp, depth, cardW: cw, cardH: ch } = node;
@@ -1623,18 +1706,69 @@ export default function OrgChart() {
               left: 0,
             }}
           >
-            {/* Connector lines (thread/string style) */}
+            {/* Connector lines */}
             <svg style={{ position: "absolute", top: 0, left: 0, width: treeWidth, height: treeHeight, pointerEvents: "none" }}>
-              {nodes.map(node => {
-                if (node.parentX == null || node.parentY == null) return null;
-                const sx = node.parentX;
-                const sy = node.parentY;
-                const ex = node.x + node.cardW / 2;
-                const ey = node.y;
-                const midY = sy + (ey - sy) / 2;
+              {connectors.map(group => {
+                const lnProps = { fill: "none", stroke: "#8b7355", strokeWidth: 1.5, strokeDasharray: "6 3", opacity: 0.6 };
+
+                if (group.style === "bus") {
+                  /*
+                   * Bus connector (CEO → level-1):
+                   *   parent-bottom → down to midY → horizontal bar spanning all children → drop to each child top
+                   */
+                  const firstChild = group.children[0];
+                  const lastChild = group.children[group.children.length - 1];
+                  const midY = group.py + (firstChild.cy - group.py) / 2;
+                  return (
+                    <g key={`bus-${group.parentId}`}>
+                      {/* Vertical stem from parent bottom to bus bar */}
+                      <line x1={group.px} y1={group.py} x2={group.px} y2={midY} {...lnProps} />
+                      {/* Horizontal bus bar */}
+                      {group.children.length > 1 && (
+                        <line x1={firstChild.cx} y1={midY} x2={lastChild.cx} y2={midY} {...lnProps} />
+                      )}
+                      {/* Vertical drops from bus bar to each child */}
+                      {group.children.map(child => (
+                        <line key={`drop-${child.id}`} x1={child.cx} y1={midY} x2={child.cx} y2={child.cy} {...lnProps} />
+                      ))}
+                    </g>
+                  );
+                }
+
+                /*
+                 * Spine connector (vertical stack):
+                 *   Parent-bottom → down to spine-x → vertical rail alongside stacked children
+                 *   At each child: horizontal stub from spine to child's left edge
+                 *
+                 *   ┌──Parent──┐
+                 *   └────┬─────┘
+                 *        │
+                 *     ┌──┤  ← spine sits at child.cx - SPINE_OFFSET_X
+                 *     │ Child1│
+                 *     ├──┤
+                 *     │ Child2│
+                 *     └──┘
+                 */
+                const spineX = group.children[0].cx - group.children[0].cardW / 2 - SPINE_OFFSET_X;
+                const firstStubY = group.children[0].cy + group.children[0].cardH / 2;
+                const lastStubY = group.children[group.children.length - 1].cy + group.children[group.children.length - 1].cardH / 2;
+
                 return (
-                  <g key={`line-${node.employee.id}`}>
-                    <path d={`M ${sx} ${sy} L ${sx} ${midY} L ${ex} ${midY} L ${ex} ${ey}`} fill="none" stroke="#8b7355" strokeWidth={1.5} strokeDasharray="6 3" opacity={0.6} />
+                  <g key={`spine-${group.parentId}`}>
+                    {/* Vertical drop from parent bottom-centre down to spine start */}
+                    <path d={`M ${group.px} ${group.py} L ${group.px} ${group.py + 16} L ${spineX} ${group.py + 16} L ${spineX} ${firstStubY}`} {...lnProps} />
+                    {/* Vertical spine rail from first child to last child */}
+                    {group.children.length > 1 && (
+                      <line x1={spineX} y1={firstStubY} x2={spineX} y2={lastStubY} {...lnProps} />
+                    )}
+                    {/* Horizontal stubs from spine to each child's left edge */}
+                    {group.children.map(child => {
+                      const stubY = child.cy + child.cardH / 2;
+                      const cardLeft = child.cx - child.cardW / 2;
+                      return (
+                        <line key={`stub-${child.id}`} x1={spineX} y1={stubY} x2={cardLeft} y2={stubY} {...lnProps} />
+                      );
+                    })}
                   </g>
                 );
               })}
