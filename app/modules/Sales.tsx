@@ -303,6 +303,7 @@ export default function Sales() {
   const [saving, setSaving] = useState(false);
   const [editMsg, setEditMsg] = useState<string | null>(null);
   const [isNew, setIsNew] = useState(false);
+  const [editTab, setEditTab] = useState<0 | 1 | 2>(0);
 
   /* Debounce ref */
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -390,6 +391,7 @@ export default function Sales() {
     setEditDraft({ ...row });
     setEditMsg(null);
     setIsNew(false);
+    setEditTab(0);
   }
 
   function openNew() {
@@ -399,6 +401,7 @@ export default function Sales() {
     setEditDraft(blank);
     setEditMsg(null);
     setIsNew(true);
+    setEditTab(0);
   }
 
   function setField(key: string, value: string) {
@@ -581,54 +584,266 @@ export default function Sales() {
 
       </div>{/* end rounded card wrapper */}
 
-      {/* Edit Dialog */}
+      {/* Edit Dialog — Tabbed */}
       {editRow && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => { setEditRow(null); setIsNew(false); }}>
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl mx-4 max-h-[85vh] flex flex-col" onClick={ev => ev.stopPropagation()}>
-            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 flex-shrink-0">
-              <div>
-                <div className="text-sm font-semibold text-slate-800">{isNew ? "New Deal" : "Edit Deal"}</div>
-                <div className="text-[10px] text-slate-400">{isNew ? "Fill in the fields below to create a new deal" : `${editDraft.customer_name ?? "Untitled"} · ${editDraft.sales_rep ?? "No rep"} · ID: ${editRow.id.slice(0, 8)}`}</div>
-              </div>
-              <button className="text-slate-400 hover:text-slate-600 text-lg" onClick={() => { setEditRow(null); setIsNew(false); }}>✕</button>
-            </div>
+        <EditDialog
+          isNew={isNew}
+          editRow={editRow}
+          editDraft={editDraft}
+          editMsg={editMsg}
+          saving={saving}
+          editTab={editTab}
+          setEditTab={setEditTab}
+          setField={setField}
+          saveEdit={saveEdit}
+          onClose={() => { setEditRow(null); setIsNew(false); }}
+        />
+      )}
+    </div>
+  );
+}
 
-            <div className="overflow-y-auto flex-1 px-5 py-4">
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-3">
-                {EDIT_COLUMNS.map(col => {
-                  const k = col.key as keyof DealRow;
-                  const val = editDraft[k];
-                  const displayVal = val == null ? "" : String(val);
-                  return (
-                    <div key={col.key}>
-                      <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block mb-0.5">{col.label}</label>
-                      {col.type === "date" ? (
-                        <input type="date" className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-300"
-                          value={displayVal ? displayVal.slice(0, 10) : ""} onChange={e => setField(k, e.target.value)} />
-                      ) : col.type === "money" || col.type === "num" ? (
-                        <input type="number" step="any" className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm text-right focus:outline-none focus:ring-1 focus:ring-slate-300"
-                          value={displayVal} onChange={e => setField(k, e.target.value)} />
-                      ) : (
-                        <input className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-300"
-                          value={displayVal} onChange={e => setField(k, e.target.value)} />
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
+/* ═══════════════════════════════════════════════════════════
+   EDIT DIALOG — Tabbed layout
+   Tab 0: Sales & Contract
+   Tab 1: Finance
+   Tab 2: Status & Stage
+   ═══════════════════════════════════════════════════════════ */
 
-            <div className="flex items-center justify-between px-5 py-3 border-t border-slate-100 bg-slate-50 rounded-b-xl flex-shrink-0">
-              {editMsg && <div className="text-xs text-amber-600">{editMsg}</div>}
-              {!editMsg && <div />}
-              <div className="flex gap-2">
-                <button className={UI.buttonGhost} onClick={() => { setEditRow(null); setIsNew(false); }}>Cancel</button>
-                <button className={UI.buttonPrimary} onClick={saveEdit} disabled={saving}>{saving ? "Saving..." : isNew ? "Create Deal" : "Save Changes"}</button>
-              </div>
+const EDIT_TABS = ["Sales & Contract", "Finance", "Status & Stage"] as const;
+
+type EditFieldDef = { label: string; key: keyof DealRow; type: "text" | "money" | "num" | "date" };
+
+/* ── Tab 0: Sales & Contract ── */
+const TAB0_SALES: EditFieldDef[] = [
+  { label: "Date Closed",   key: "date_closed",   type: "date" },
+  { label: "Customer Name", key: "customer_name",  type: "text" },
+  { label: "Company",       key: "company",        type: "text" },
+  { label: "State",         key: "state",          type: "text" },
+  { label: "Teams",         key: "teams",          type: "text" },
+];
+const TAB0_REPS: EditFieldDef[] = [
+  { label: "Sales Rep",          key: "sales_rep",                      type: "text" },
+  { label: "Appointment Setter", key: "appointment_setter",             type: "text" },
+  { label: "CC App Setter",      key: "call_center_appointment_setter", type: "text" },
+];
+const TAB0_CONTRACT: EditFieldDef[] = [
+  { label: "KW System",          key: "kw_system",              type: "num" },
+  { label: "Agent Cost Basis",   key: "agent_cost_basis_sold_at", type: "money" },
+  { label: "Net $/W",            key: "net_price_per_watt",     type: "num" },
+  { label: "Contract Value",     key: "contract_value",         type: "money" },
+  { label: "Total Adders",       key: "total_adders",           type: "money" },
+  { label: "Contract Net Price", key: "contract_net_price",     type: "money" },
+];
+
+/* ── Tab 1: Finance ── */
+const TAB1_REV: EditFieldDef[] = [
+  { label: "Rev", key: "rev", type: "money" },
+];
+const TAB1_NRG: EditFieldDef[] = [
+  { label: "NRG P2 Rev Date",   key: "paid_nova_nrg_p2_rev_date",        type: "date" },
+  { label: "NRG P1+P2 Rev Amt", key: "paid_nova_nrg_p1_p2_rev_amount",   type: "money" },
+  { label: "NRG Post-P2 Date",  key: "paid_nova_nrg_post_p2_date",       type: "date" },
+  { label: "NRG Post-P2 Amt",   key: "paid_nova_nrg_post_p2_rev_amount", type: "money" },
+  { label: "NRG Reversal Date", key: "nova_nrg_reversal_date",           type: "date" },
+  { label: "NRG Reversal Amt",  key: "nova_nrg_reversal_amount",         type: "money" },
+  { label: "NRG Fee Amt",       key: "nova_nrg_fee_amount",              type: "money" },
+  { label: "NRG After Fee",     key: "nova_nrg_rev_after_fee_amount",    type: "money" },
+];
+const TAB1_GROSS: EditFieldDef[] = [
+  { label: "Gross Profit", key: "gross_profit", type: "money" },
+];
+const TAB1_VIS_HEADER: EditFieldDef[] = [
+  { label: "Visionary Commission", key: "visionary_paid_out_commission", type: "money" },
+];
+const TAB1_VIS: EditFieldDef[] = [
+  { label: "Vis P2 Date",       key: "paid_visionary_p2_date",       type: "date" },
+  { label: "Vis P1+P2 Amt",     key: "paid_visionary_p1_p2_amount",  type: "money" },
+  { label: "Vis Post-P2 Date",  key: "paid_visionary_post_p2_date",  type: "date" },
+  { label: "Vis Post-P2 Amt",   key: "paid_visionary_post_p2_amount",type: "money" },
+  { label: "Vis Reversal Date", key: "p1_visionary_reversal_date",   type: "date" },
+  { label: "Vis Reversal Amt",  key: "p1_visionary_reversal_amount", type: "money" },
+  { label: "Vis Fee Amt",       key: "visionary_fee_amount",         type: "money" },
+  { label: "Vis After Fee",     key: "visionary_rev_after_fee_amount",type: "money" },
+];
+const TAB1_AGENT_HEADER: EditFieldDef[] = [
+  { label: "Agent Payout", key: "agent_payout", type: "money" },
+];
+const TAB1_AGENT: EditFieldDef[] = [
+  { label: "Agent P2 Date",       key: "paid_agent_p2_date",       type: "date" },
+  { label: "Agent P1+P2 Amt",     key: "paid_agent_p1_p2_amount",  type: "money" },
+  { label: "Agent Post-P2 Date",  key: "paid_agent_post_p2_date",  type: "date" },
+  { label: "Agent Post-P2 Amt",   key: "paid_agent_post_p2_amount",type: "money" },
+  { label: "Agent Reversal Date", key: "p1_agent_reversal_date",   type: "date" },
+  { label: "Agent Reversal Amt",  key: "p1_agent_reversal_amount", type: "money" },
+  { label: "Agent Fee Amt",       key: "agent_fee_amount",         type: "money" },
+  { label: "Agent After Fee",     key: "agent_rev_after_fee_amount",type: "money" },
+];
+const TAB1_MGR: EditFieldDef[] = [
+  { label: "Manager",   key: "manager",        type: "text" },
+  { label: "Manager $", key: "manager_amount",  type: "money" },
+];
+const TAB1_MISC: EditFieldDef[] = [
+  { label: "NRG Customer Adders", key: "nova_nrg_customer_adders", type: "money" },
+  { label: "Owed Money",          key: "owed_money",               type: "money" },
+  { label: "Paid Bonus",          key: "paid_bonus",               type: "money" },
+];
+
+/* ── Tab 2: Status & Stage ── */
+const TAB2_TOP: EditFieldDef[] = [
+  { label: "Activated",   key: "activated",   type: "text" },
+  { label: "Online Deal", key: "online_deal", type: "text" },
+  { label: "CC Lead",     key: "call_center_lead", type: "text" },
+];
+const TAB2_STATUS: EditFieldDef[] = [
+  { label: "Status", key: "status", type: "text" },
+];
+const TAB2_MILESTONES: EditFieldDef[] = [
+  { label: "Survey Date",        key: "site_survey_date_completed", type: "date" },
+  { label: "Survey Status",      key: "site_survey_status",         type: "text" },
+  { label: "Design Ready",       key: "design_ready_date",          type: "date" },
+  { label: "Permit Submitted",   key: "permit_submitted_date",      type: "date" },
+  { label: "Permit Approved",    key: "permit_approved_date",       type: "date" },
+  { label: "Install 1 (Racks)",  key: "install_1_racks_date",       type: "date" },
+  { label: "Install 2 (Panels)", key: "install_2_panel_landed_date",type: "date" },
+  { label: "PTO",                key: "pto_date",                   type: "date" },
+];
+const TAB2_PAID: EditFieldDef[] = [
+  { label: "Paid", key: "paid_date", type: "date" },
+];
+
+/* ── Reusable field input renderer ── */
+function FieldInput({ field, value, onChange }: { field: EditFieldDef; value: unknown; onChange: (key: string, val: string) => void }) {
+  const displayVal = value == null ? "" : String(value);
+  const cls = "w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-300";
+  return (
+    <div>
+      <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block mb-0.5">{field.label}</label>
+      {field.type === "date" ? (
+        <input type="date" className={cls} value={displayVal ? displayVal.slice(0, 10) : ""} onChange={e => onChange(field.key, e.target.value)} />
+      ) : field.type === "money" || field.type === "num" ? (
+        <input type="number" step="any" className={`${cls} text-right`} value={displayVal} onChange={e => onChange(field.key, e.target.value)} />
+      ) : (
+        <input className={cls} value={displayVal} onChange={e => onChange(field.key, e.target.value)} />
+      )}
+    </div>
+  );
+}
+
+/* ── Section header ── */
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return <div className="col-span-full text-[11px] font-bold text-slate-700 uppercase tracking-wider border-b border-slate-200/60 pb-1 mt-2">{children}</div>;
+}
+
+/* ── Tabbed edit dialog ── */
+function EditDialog({ isNew, editRow, editDraft, editMsg, saving, editTab, setEditTab, setField, saveEdit, onClose }: {
+  isNew: boolean;
+  editRow: DealRow;
+  editDraft: Record<string, any>;
+  editMsg: string | null;
+  saving: boolean;
+  editTab: 0 | 1 | 2;
+  setEditTab: (t: 0 | 1 | 2) => void;
+  setField: (key: string, value: string) => void;
+  saveEdit: () => void;
+  onClose: () => void;
+}) {
+  const renderFields = (fields: EditFieldDef[]) =>
+    fields.map(f => <FieldInput key={f.key} field={f} value={editDraft[f.key]} onChange={setField} />);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl mx-4 max-h-[85vh] flex flex-col" onClick={ev => ev.stopPropagation()}>
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 flex-shrink-0">
+          <div>
+            <div className="text-sm font-semibold text-slate-800">{isNew ? "New Deal" : "Edit Deal"}</div>
+            <div className="text-[10px] text-slate-400">{isNew ? "Fill in the fields below to create a new deal" : `${editDraft.customer_name ?? "Untitled"} · ${editDraft.sales_rep ?? "No rep"} · ID: ${editRow.id.slice(0, 8)}`}</div>
+          </div>
+          <button className="text-slate-400 hover:text-slate-600 text-lg" onClick={onClose}>✕</button>
+        </div>
+
+        {/* Tab bar */}
+        <div className="flex border-b border-slate-200 px-5 flex-shrink-0">
+          {EDIT_TABS.map((label, i) => (
+            <button
+              key={label}
+              type="button"
+              className={`px-4 py-2.5 text-xs font-semibold transition-colors relative ${
+                editTab === i
+                  ? "text-slate-900"
+                  : "text-slate-400 hover:text-slate-600"
+              }`}
+              onClick={() => setEditTab(i as 0 | 1 | 2)}
+            >
+              {label}
+              {editTab === i && <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-slate-900 rounded-full" />}
+            </button>
+          ))}
+        </div>
+
+        {/* Tab content */}
+        <div className="overflow-y-auto flex-1 px-5 py-4">
+          {editTab === 0 && (
+            <div className="space-y-1">
+              <SectionLabel>Sales Info</SectionLabel>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-3">{renderFields(TAB0_SALES)}</div>
+              <div className="grid grid-cols-3 gap-x-4 gap-y-3 mt-3">{renderFields(TAB0_REPS)}</div>
+              <SectionLabel>Contract Info</SectionLabel>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-3">{renderFields(TAB0_CONTRACT)}</div>
             </div>
+          )}
+
+          {editTab === 1 && (
+            <div className="space-y-1">
+              <SectionLabel>Revenue (NRG)</SectionLabel>
+              <div className="grid grid-cols-3 gap-x-4 gap-y-3">{renderFields(TAB1_REV)}</div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-3 mt-2">{renderFields(TAB1_NRG)}</div>
+
+              <SectionLabel>Gross Profit</SectionLabel>
+              <div className="grid grid-cols-3 gap-x-4 gap-y-3">{renderFields(TAB1_GROSS)}</div>
+
+              <SectionLabel>Visionary</SectionLabel>
+              <div className="grid grid-cols-3 gap-x-4 gap-y-3">{renderFields(TAB1_VIS_HEADER)}</div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-3 mt-2">{renderFields(TAB1_VIS)}</div>
+
+              <SectionLabel>Agent Payout</SectionLabel>
+              <div className="grid grid-cols-3 gap-x-4 gap-y-3">{renderFields(TAB1_AGENT_HEADER)}</div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-3 mt-2">{renderFields(TAB1_AGENT)}</div>
+
+              <SectionLabel>Management & Other</SectionLabel>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-3">{renderFields(TAB1_MGR)}</div>
+              <div className="grid grid-cols-3 gap-x-4 gap-y-3 mt-2">{renderFields(TAB1_MISC)}</div>
+            </div>
+          )}
+
+          {editTab === 2 && (
+            <div className="space-y-1">
+              <SectionLabel>Deal Info</SectionLabel>
+              <div className="grid grid-cols-3 gap-x-4 gap-y-3">{renderFields(TAB2_TOP)}</div>
+
+              <SectionLabel>Status</SectionLabel>
+              <div className="grid grid-cols-3 gap-x-4 gap-y-3">{renderFields(TAB2_STATUS)}</div>
+
+              <SectionLabel>Milestones</SectionLabel>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-3">{renderFields(TAB2_MILESTONES)}</div>
+
+              <SectionLabel>Completion</SectionLabel>
+              <div className="grid grid-cols-3 gap-x-4 gap-y-3">{renderFields(TAB2_PAID)}</div>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-between px-5 py-3 border-t border-slate-100 bg-slate-50 rounded-b-xl flex-shrink-0">
+          {editMsg && <div className="text-xs text-amber-600">{editMsg}</div>}
+          {!editMsg && <div />}
+          <div className="flex gap-2">
+            <button className={UI.buttonGhost} onClick={onClose}>Cancel</button>
+            <button className={UI.buttonPrimary} onClick={saveEdit} disabled={saving}>{saving ? "Saving..." : isNew ? "Create Deal" : "Save Changes"}</button>
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }
