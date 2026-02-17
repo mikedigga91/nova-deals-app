@@ -954,10 +954,10 @@ function PGF({rows,reps,grp,repAdvBal,genAdvBal,summaryRows,companies}:{rows:Pay
   const gh:React.CSSProperties={...lh,backgroundColor:"#6b9e9e"};
   const rh:React.CSSProperties={...lh,backgroundColor:"#c9706b"};
 
-  return <div style={{marginTop:"14px",fontFamily:ff,fontSize:"7pt",color:"#374151"}}>
+  return <div style={{marginTop:"36px",paddingTop:"24px",borderTop:"2px solid #94a3b8",fontFamily:ff,fontSize:"7pt",color:"#374151"}}>
 
     {/* ═══ ROW 1: Payout Summary (left) + Grand Total Row (right) ═══ */}
-    <div style={{display:"flex",gap:"16px",marginBottom:"12px"}}>
+    <div style={{display:"flex",gap:"16px",marginBottom:"16px",alignItems:"flex-start"}}>
 
       {/* LEFT: Payout Summary */}
       <div style={{flex:"0 0 30%"}}>
@@ -982,7 +982,7 @@ function PGF({rows,reps,grp,repAdvBal,genAdvBal,summaryRows,companies}:{rows:Pay
       {/* RIGHT: Grand Total Row + Company Breakdown */}
       <div style={{flex:1}}>
         {/* Grand Total Row */}
-        <table style={{borderCollapse:"collapse",width:"100%",marginBottom:"8px"}}>
+        <table style={{borderCollapse:"collapse",width:"100%",marginBottom:"14px"}}>
           <thead><tr>
             <th style={{...lh,backgroundColor:"#6b9e9e"}}>Install Amount</th>
             <th style={{...lh,backgroundColor:"#6b9e9e"}}>Bonus Amount</th>
@@ -994,7 +994,7 @@ function PGF({rows,reps,grp,repAdvBal,genAdvBal,summaryRows,companies}:{rows:Pay
             <th style={lh}>P1 Paid/Reversal</th>
           </tr></thead>
           <tbody><tr>
-            <td style={{...ld,fontWeight:700,backgroundColor:"#ecfdf5"}}>{moneyZ(x.inst)}</td>
+            <td style={{...ld,fontWeight:700,backgroundColor:"#f1f5f9"}}>{moneyZ(x.inst)}</td>
             <td style={ld}>{moneyZ(x.bon)}</td>
             <td style={ld}>{moneyZ(x.com)}</td>
             <td style={ld}>{moneyZ(x.cred)}</td>
@@ -1018,7 +1018,7 @@ function PGF({rows,reps,grp,repAdvBal,genAdvBal,summaryRows,companies}:{rows:Pay
           <tbody>
             <tr>
               <td style={{...ld,fontWeight:700}}>Install</td>
-              {companies.map(c=>{const cx=pfs(coMap.get(c)??[]);return <td key={c} style={{...ld,backgroundColor:"#ecfdf5"}}>{moneyZ(cx.inst)}</td>;})}
+              {companies.map(c=>{const cx=pfs(coMap.get(c)??[]);return <td key={c} style={{...ld,backgroundColor:"#f1f5f9"}}>{moneyZ(cx.inst)}</td>;})}
               <td style={ld}></td><td style={ld}></td><td style={ld}></td>
               <td style={{...ld,fontWeight:700}}>{moneyZ(x.inst)}</td>
             </tr>
@@ -1052,7 +1052,7 @@ function PGF({rows,reps,grp,repAdvBal,genAdvBal,summaryRows,companies}:{rows:Pay
     </div>
 
     {/* ═══ ROW 2: Customer Detail Table ═══ */}
-    <div style={{marginBottom:"12px"}}>
+    <div style={{marginTop:"8px",marginBottom:"16px",paddingTop:"16px",borderTop:"1.5px solid #cbd5e1"}}>
       <div style={{fontSize:"7px",fontWeight:700,color:"#666",marginBottom:"2px"}}>Date Sorted From General Commissions Sheet</div>
       <table style={{borderCollapse:"collapse",width:"100%"}}>
         <thead><tr>
@@ -1081,7 +1081,7 @@ function PGF({rows,reps,grp,repAdvBal,genAdvBal,summaryRows,companies}:{rows:Pay
               <td style={ld}>{money(r.contract_net_price)}</td>
               <td style={ld}>{money(r.revenue)}</td>
               <td style={ld}>{money(r.gross_profit)}</td>
-              <td style={{...ld,backgroundColor:"#ecfdf5"}}>{money(r.agent_paid_out_commission)}</td>
+              <td style={{...ld,backgroundColor:"#f1f5f9"}}>{money(r.agent_paid_out_commission)}</td>
               <td style={ld}></td>
               <td style={ld}></td>
             </tr>
@@ -1105,7 +1105,7 @@ function PGF({rows,reps,grp,repAdvBal,genAdvBal,summaryRows,companies}:{rows:Pay
     </div>
 
     {/* ═══ ROW 3: Deposited/Remaining (left) + Rep/Setter Summary (right) ═══ */}
-    <div style={{display:"flex",gap:"16px"}}>
+    <div style={{display:"flex",gap:"16px",marginTop:"8px",paddingTop:"16px",borderTop:"1.5px solid #cbd5e1"}}>
 
       {/* LEFT: Deposited / Remaining Balance */}
       <div style={{flex:"0 0 45%"}}>
@@ -1206,7 +1206,7 @@ function PGF({rows,reps,grp,repAdvBal,genAdvBal,summaryRows,companies}:{rows:Pay
     </div>
 
     {/* Grand totals bar */}
-    <div style={{display:"flex",justifyContent:"space-between",marginTop:"10px",fontFamily:ff}}>
+    <div style={{display:"flex",justifyContent:"space-between",marginTop:"20px",paddingTop:"12px",borderTop:"2px solid #94a3b8",fontFamily:ff}}>
       <span style={{padding:"4px 14px",fontWeight:600,fontSize:"8pt",color:"#fff",backgroundColor:TEAL,borderRadius:"2px"}}>Grand Total Paid: {moneyZ(netTotal)}</span>
       <span style={{padding:"4px 14px",fontWeight:600,fontSize:"8pt",color:"#fff",backgroundColor:genAdvBal>0?ROSE:TEAL,borderRadius:"2px"}}>Total Advance Remaining: {moneyZ(genAdvBal)}</span>
     </div>
