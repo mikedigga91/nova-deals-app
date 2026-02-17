@@ -209,6 +209,28 @@ export default function RepPortal() {
       });
   }, [user?.email]);
 
+  /* ─── Stable filter options (loaded once, not affected by active filters) ─── */
+  const [allOptions, setAllOptions] = useState<{
+    salesReps: string[]; setters: string[]; companies: string[]; statuses: string[];
+  }>({ salesReps: [], setters: [], companies: [], statuses: [] });
+
+  useEffect(() => {
+    supabase
+      .from("deals_view")
+      .select("sales_rep,appointment_setter,company,status")
+      .gte("date_closed", DEFAULT_START)
+      .limit(5000)
+      .then(({ data }) => {
+        if (!data) return;
+        setAllOptions({
+          salesReps: uniqSorted(data.map((r: Record<string, unknown>) => r.sales_rep as string)),
+          setters: uniqSorted(data.map((r: Record<string, unknown>) => r.appointment_setter as string)),
+          companies: uniqSorted(data.map((r: Record<string, unknown>) => r.company as string)),
+          statuses: uniqSorted(data.map((r: Record<string, unknown>) => r.status as string)),
+        });
+      });
+  }, []);
+
   /* ─── Data state ─── */
   const [rows, setRows] = useState<DealRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -272,13 +294,8 @@ export default function RepPortal() {
     return rows.filter((r) => !INACTIVE_STATUSES.includes((r.status ?? "").trim()));
   }, [rows, statuses]);
 
-  /* ─── Options from loaded data ─── */
-  const filterOptions = useMemo(() => ({
-    salesReps: uniqSorted(rows.map((r) => r.sales_rep)),
-    setters: uniqSorted(rows.map((r) => r.appointment_setter)),
-    companies: uniqSorted(rows.map((r) => r.company)),
-    statuses: uniqSorted(rows.map((r) => r.status)),
-  }), [rows]);
+  /* ─── Options from stable one-time fetch (not affected by filters) ─── */
+  const filterOptions = allOptions;
 
   /* ─── Sort ─── */
   function handleSort(idx: number) {
