@@ -1211,10 +1211,12 @@ export default function OrgChart() {
         return (a.full_name || "").localeCompare(b.full_name || "");
       });
 
-    const payload = sibs.map((e, idx) => ({ id: e.id, sort_order: idx }));
-    if (payload.length) {
-      await supabase.from("employees").upsert(payload, { onConflict: "id" });
-    }
+    // Use individual updates instead of upsert to avoid overwriting other columns
+    await Promise.all(
+      sibs.map((e, idx) =>
+        supabase.from("employees").update({ sort_order: idx }).eq("id", e.id)
+      )
+    );
   }
 
   const onDropReorderSibling = (target: Employee, side: "left" | "right") => async (e: React.DragEvent) => {
