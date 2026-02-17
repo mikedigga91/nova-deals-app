@@ -142,7 +142,7 @@ export default function Payfile() {
         <div className="no-print px-5 py-3.5 border-b border-slate-200">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-violet-500 to-violet-700 flex items-center justify-center shadow-sm">
+              <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-slate-600 to-slate-800 flex items-center justify-center shadow-sm">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" />
                 </svg>
@@ -327,7 +327,7 @@ function DealManager() {
                 </td></tr>
               ):(
                 rows.map(r=>(
-                  <tr key={r.id} className="border-t border-slate-100 hover:bg-indigo-50/40 cursor-pointer transition-colors" onClick={()=>openRow(r)}>
+                  <tr key={r.id} className="border-t border-slate-100 hover:bg-slate-50 cursor-pointer transition-colors" onClick={()=>openRow(r)}>
                     {TC.map(c=><td key={c.k} className="px-2 py-2 whitespace-nowrap">{c.f?c.f((r as any)[c.k]):s((r as any)[c.k])}</td>)}
                   </tr>
                 ))
@@ -416,8 +416,8 @@ function DealManager() {
                 </div>
                 {/* Setter split — only shown when setter exists */}
                 {editPf.appointment_setter&&(
-                  <div className="mt-3 border border-blue-200 bg-blue-50/50 rounded-lg p-3">
-                    <div className="text-[10px] font-semibold text-blue-800 uppercase tracking-wider mb-2">Install Amount Split</div>
+                  <div className="mt-3 border border-slate-200 bg-slate-50/50 rounded-lg p-3">
+                    <div className="text-[10px] font-semibold text-slate-700 uppercase tracking-wider mb-2">Install Amount Split</div>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-3 items-end">
                       <div>
                         <label className="text-[10px] font-medium text-slate-500 block mb-0.5">Rep Split % ({editPf.sales_rep})</label>
@@ -448,7 +448,7 @@ function DealManager() {
                   </div>
                 )}
                 {editPf.payment_type==="post_p2"&&(
-                  <div className="mt-2 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-1.5">
+                  <div className="mt-2 text-[10px] text-slate-600 bg-slate-50 border border-slate-200 rounded px-3 py-1.5">
                     ℹ️ Post P2 entries will hide kW, Cost Basis, NPPW, and Date Closed on the commission sheet since they were already shown on the P2 payfile.
                   </div>
                 )}
@@ -504,6 +504,8 @@ function PayfileGenerator() {
   const [genAdvBal,setGenAdvBal]=useState<number>(0);
 
   const [summaryRows,setSummaryRows]=useState<SummaryRow[]>([]);
+  const [filterQuery,setFilterQuery]=useState("");
+  const hasMounted=useRef(false);
 
   /* Find all deals paid on the selected date, then pull their payfile entries */
   async function generate(){
@@ -567,6 +569,12 @@ function PayfileGenerator() {
     setLoading(false);
   }
 
+  /* Auto-load on mount */
+  useEffect(()=>{
+    if(!hasMounted.current){ hasMounted.current=true; generate(); }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[]);
+
   /* Expand rows: for entries with a setter, create two rows — rep row + setter row with split install amounts */
   const expandedRows=useMemo(()=>{
     const out:PayfileEntry[]=[];
@@ -592,41 +600,63 @@ function PayfileGenerator() {
     return out;
   },[rows]);
 
-  const grp=useMemo(()=>{const m=new Map<string,PayfileEntry[]>();expandedRows.forEach(r=>{const k=r.sales_rep??"Unknown";if(!m.has(k))m.set(k,[]);m.get(k)!.push(r);});return m;},[expandedRows]);
+  /* Filter expanded rows by search query (customer, rep, company) */
+  const filteredRows=useMemo(()=>{
+    const q=filterQuery.trim().toLowerCase();
+    if(!q) return expandedRows;
+    return expandedRows.filter(r=>
+      (r.customer_name?.toLowerCase().includes(q))||
+      (r.sales_rep?.toLowerCase().includes(q))||
+      (r.company?.toLowerCase().includes(q))||
+      (r.appointment_setter?.toLowerCase().includes(q))
+    );
+  },[expandedRows,filterQuery]);
+
+  const grp=useMemo(()=>{const m=new Map<string,PayfileEntry[]>();filteredRows.forEach(r=>{const k=r.sales_rep??"Unknown";if(!m.has(k))m.set(k,[]);m.get(k)!.push(r);});return m;},[filteredRows]);
   const reps=useMemo(()=>Array.from(grp.keys()).sort(),[grp]);
   const companies=useMemo(()=>[...new Set(rows.map(r=>r.company).filter(Boolean))] as string[],[rows]);
 
-  const hasData=expandedRows.length>0;
+  const hasData=filteredRows.length>0;
 
   return (
     <>
-      <div className="no-print px-6 py-5 space-y-4">
+      <div className="no-print px-6 py-6 space-y-5">
         {/* Controls */}
-        <div className="border border-slate-200 rounded-xl p-4 bg-white shadow-sm">
-          <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Generate Commission Sheets</div>
-          <div className="flex flex-wrap gap-4 items-end">
+        <div className="border border-slate-200 rounded-xl p-5 bg-white shadow-sm">
+          <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-4">Generate Commission Sheets</div>
+          <div className="flex flex-wrap gap-5 items-end">
             <div>
-              <label className="text-[10px] text-slate-500 block mb-1">Payment Received Date</label>
-              <input type="date" className="border border-slate-200/70 rounded-lg px-3 py-2 text-sm" value={payDate} onChange={e=>setPayDate(e.target.value)} />
+              <label className="text-[10px] text-slate-500 block mb-1.5">Payment Received Date</label>
+              <input type="date" className="border border-slate-200/70 rounded-lg px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-slate-300" value={payDate} onChange={e=>setPayDate(e.target.value)} />
             </div>
             <div>
-              <label className="text-[10px] text-slate-500 block mb-1">Payment Type</label>
-              <select className="border border-slate-200/70 rounded-lg px-3 py-2 text-sm min-w-[160px]" value={payType} onChange={e=>setPayType(e.target.value as "p2"|"post_p2")}>
+              <label className="text-[10px] text-slate-500 block mb-1.5">Payment Type</label>
+              <select className="border border-slate-200/70 rounded-lg px-3.5 py-2.5 text-sm min-w-[180px] focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-slate-300" value={payType} onChange={e=>setPayType(e.target.value as "p2"|"post_p2")}>
                 <option value="p2">P2 Revenue Payment</option>
                 <option value="post_p2">Post P2 Revenue Payment</option>
               </select>
             </div>
-            <button className="px-5 py-2 rounded-lg bg-slate-900 text-white shadow-sm hover:bg-slate-800 active:scale-[0.99] transition text-xs font-semibold disabled:opacity-50" onClick={generate} disabled={loading}>
+            <button className="px-5 py-2.5 rounded-lg bg-slate-900 text-white shadow-sm hover:bg-slate-800 active:scale-[0.99] transition text-xs font-semibold disabled:opacity-50" onClick={generate} disabled={loading}>
               {loading?"Searching…":"Generate"}
             </button>
-            {hasData&&<button className="px-5 py-2 rounded-lg border text-xs font-semibold hover:bg-slate-50" onClick={()=>window.print()}>🖨️ Print</button>}
+            {hasData&&<button className="px-5 py-2.5 rounded-lg border text-xs font-semibold hover:bg-slate-50" onClick={()=>window.print()}>🖨️ Print</button>}
           </div>
-          <p className="text-[10px] text-slate-400 mt-2">
+          <p className="text-[10px] text-slate-400 mt-3">
             Finds all deals where {payType==="p2"?"Rev P2 Date":"Post P2 Date"} matches the selected date, then loads their payfile entries.
           </p>
         </div>
 
-        {msg&&<div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">{msg}</div>}
+        {msg&&<div className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">{msg}</div>}
+
+        {/* Search / Filter loaded data */}
+        {expandedRows.length>0&&(
+          <div>
+            <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Filter Results</label>
+            <input className="w-full max-w-md border border-slate-200/70 rounded-lg px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-slate-300"
+              placeholder="Type to filter by customer name, rep, company, or setter…" value={filterQuery} onChange={e=>setFilterQuery(e.target.value)} />
+            <p className="text-[10px] text-slate-400 mt-1">{filteredRows.length} of {expandedRows.length} entries shown</p>
+          </div>
+        )}
 
         {hasData&&(
           <div className="flex flex-wrap gap-2 items-center">
@@ -634,28 +664,28 @@ function PayfileGenerator() {
             {companies.map(c=>(
               <span key={c} className="inline-flex items-center gap-1 bg-slate-100 border rounded-full px-3 py-1 text-xs font-medium">{c}</span>
             ))}
-            <span className="text-[10px] text-slate-400">{rows.length} deals · {expandedRows.length} entries (incl. setter splits) · {reps.length} reps</span>
+            <span className="text-[10px] text-slate-400">{rows.length} deals · {filteredRows.length} entries{filterQuery?" (filtered)":""} · {reps.length} reps</span>
           </div>
         )}
 
         {/* Advance Remaining Balances — per rep + editable general */}
         {hasData&&reps.length>0&&(
-          <div className="border border-slate-200 rounded-xl p-4 bg-white shadow-sm">
-            <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Advance Remaining Balances</div>
-            <p className="text-[10px] text-slate-400 mb-3">Set per-rep and general balances before printing. Future: will link to Advances database.</p>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="border border-slate-200 rounded-xl p-5 bg-white shadow-sm">
+            <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Advance Remaining Balances</div>
+            <p className="text-[10px] text-slate-400 mb-4">Set per-rep and general balances before printing.</p>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {reps.map(rep=>(
                 <div key={rep}>
-                  <label className="text-[10px] font-medium text-slate-500 block mb-0.5">{rep}</label>
-                  <input className="w-full border border-slate-200/70 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-200"
+                  <label className="text-[10px] font-medium text-slate-500 block mb-1">{rep}</label>
+                  <input className="w-full border border-slate-200/70 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-slate-300"
                     value={repAdvBal[rep]??""} onChange={e=>{const v=pm(e.target.value);setRepAdvBal(prev=>({...prev,[rep]:v??0}));}} placeholder="$0.00" />
                 </div>
               ))}
             </div>
-            <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="mt-4 pt-4 border-t border-slate-100 grid grid-cols-2 md:grid-cols-4 gap-4">
               <div>
-                <label className="text-[10px] font-semibold text-amber-700 block mb-0.5">General Advance Remaining (Total)</label>
-                <input className="w-full border-2 border-amber-300 rounded-lg px-2.5 py-1.5 text-sm font-bold bg-amber-50 focus:outline-none focus:ring-2 focus:ring-amber-300"
+                <label className="text-[10px] font-semibold text-slate-600 block mb-1">General Advance Remaining (Total)</label>
+                <input className="w-full border-2 border-slate-300 rounded-lg px-3 py-2 text-sm font-bold bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-300"
                   value={genAdvBal||""} onChange={e=>{const v=pm(e.target.value);setGenAdvBal(v??0);}} placeholder="$0.00" />
               </div>
               <div className="flex items-end">
@@ -667,23 +697,23 @@ function PayfileGenerator() {
       </div>
 
       {hasData&&(
-        <div id="pf-print" className="px-4">
+        <div id="pf-print" className="px-6">
           {/* GENERAL COMMISSIONS SHEET */}
-          <div className="pf-sheet" style={{marginBottom:"40px",paddingBottom:"20px",borderBottom:"3px solid #d1d5db"}}>
+          <div className="pf-sheet" style={{marginBottom:"48px",paddingBottom:"24px",borderBottom:"3px solid #d1d5db"}}>
             <PH d={fds(payDate)} t="GENERAL COMMISSIONS SHEET" />
             <table style={tbl}>
               <thead><PHR /></thead>
               <tbody>
                 {reps.map(rep=><PRB key={rep} rows={grp.get(rep)!} sp={true} advBal={repAdvBal[rep]??0} />)}
-                <PSR rows={expandedRows} lb="Grand Subtotals:" />
+                <PSR rows={filteredRows} lb="Grand Subtotals:" />
               </tbody>
             </table>
-            <PGF rows={expandedRows} reps={reps} grp={grp} repAdvBal={repAdvBal} genAdvBal={genAdvBal} summaryRows={summaryRows} companies={companies} />
+            <PGF rows={filteredRows} reps={reps} grp={grp} repAdvBal={repAdvBal} genAdvBal={genAdvBal} summaryRows={summaryRows} companies={companies} />
           </div>
 
           {/* INDIVIDUAL SHEETS */}
           {reps.map((rep,ri)=>(
-            <div key={`i-${rep}`} className="pf-sheet" style={{marginBottom:ri<reps.length-1?"40px":"0",paddingBottom:ri<reps.length-1?"20px":"0",borderBottom:ri<reps.length-1?"3px solid #d1d5db":"none"}}>
+            <div key={`i-${rep}`} className="pf-sheet" style={{marginBottom:ri<reps.length-1?"48px":"0",paddingBottom:ri<reps.length-1?"24px":"0",borderBottom:ri<reps.length-1?"3px solid #d1d5db":"none"}}>
               <PH d={fds(payDate)} t={`SALES COMMISSIONS SHEET — ${rep}`} />
               <table style={tbl}>
                 <thead><PHR /></thead>
@@ -766,7 +796,7 @@ function dStyle(i:number,alt:boolean,isPost:boolean):React.CSSProperties{
 /* Subtotal cell */
 function sStyle(i:number):React.CSSProperties{
   return {
-    padding:"3.5px 4px",fontSize:"6.8pt",fontWeight:600,
+    padding:"4px 4px",fontSize:"6.8pt",fontWeight:600,
     textAlign:i>=INFO_COUNT?"right":"left",
     color:"#fff",backgroundColor:"#4b5563",fontFamily:ff,
     borderRight:i<COL_COUNT-1?"0.5px solid rgba(255,255,255,0.08)":"none",
@@ -834,8 +864,8 @@ function PRB({rows,sp:showSp,advBal}:{rows:PayfileEntry[];sp:boolean;advBal:numb
   const x=pfs(rows);
   const rep=rows[0]?.sales_rep??"";
   return <>
-    {/* Rep label */}
-    <tr><td colSpan={COL_COUNT} style={{padding:"5px 4px 1px",fontSize:"7pt",fontWeight:700,color:"#374151",borderBottom:"1px solid #9ca3af",fontFamily:ff,letterSpacing:"0.02em"}}>{rep}</td></tr>
+    {/* Rep label — with extra top padding for clear separation */}
+    <tr><td colSpan={COL_COUNT} style={{padding:"14px 4px 3px",fontSize:"8pt",fontWeight:700,color:"#1e293b",borderBottom:"2px solid #64748b",fontFamily:ff,letterSpacing:"0.02em"}}>{rep}</td></tr>
     {/* Data rows */}
     {rows.map((r,i)=>{
       const isPost=r.payment_type==="post_p2";
@@ -854,13 +884,16 @@ function PRB({rows,sp:showSp,advBal}:{rows:PayfileEntry[];sp:boolean;advBal:numb
     {/* Subtotals */}
     <PSR rows={rows} lb="Subtotals" />
     {/* Footer badges */}
-    <tr><td colSpan={COL_COUNT} style={{border:"none",padding:"2px 0 0"}}>
-      <div style={{display:"flex",gap:"6px",fontFamily:ff}}>
-        <span style={{padding:"2px 8px",fontSize:"6.5pt",fontWeight:600,color:"#fff",backgroundColor:TEAL,borderRadius:"1px"}}>Total Paid: {moneyZ(pfn(x))}</span>
-        <span style={{padding:"2px 8px",fontSize:"6.5pt",fontWeight:600,color:"#fff",backgroundColor:advBal>0?ROSE:TEAL,borderRadius:"1px"}}>Adv. Remaining: {moneyZ(advBal)}</span>
+    <tr><td colSpan={COL_COUNT} style={{border:"none",padding:"4px 0 0"}}>
+      <div style={{display:"flex",gap:"8px",fontFamily:ff}}>
+        <span style={{padding:"3px 10px",fontSize:"6.5pt",fontWeight:600,color:"#fff",backgroundColor:TEAL,borderRadius:"2px"}}>Total Paid: {moneyZ(pfn(x))}</span>
+        <span style={{padding:"3px 10px",fontSize:"6.5pt",fontWeight:600,color:"#fff",backgroundColor:advBal>0?ROSE:TEAL,borderRadius:"2px"}}>Adv. Remaining: {moneyZ(advBal)}</span>
       </div>
     </td></tr>
-    {showSp&&<tr><td colSpan={COL_COUNT} style={{border:"none",height:"10px"}}></td></tr>}
+    {/* Separator between rep blocks — visible divider line + breathing room */}
+    {showSp&&<tr><td colSpan={COL_COUNT} style={{border:"none",padding:"8px 0"}}>
+      <div style={{borderBottom:"1.5px solid #cbd5e1",margin:"0 4px"}} />
+    </td></tr>}
   </>;
 }
 
@@ -1178,7 +1211,7 @@ function PGF({rows,reps,grp,repAdvBal,genAdvBal,summaryRows,companies}:{rows:Pay
 /* ═══════════════════ FORM FIELD COMPONENTS ═══════════════════ */
 
 function FS({t,children,a}:{t:string;children:React.ReactNode;a?:string}){
-  const bc=a==="green"?"border-l-emerald-500":a==="red"?"border-l-red-500":a==="amber"?"border-l-amber-500":"border-l-slate-300";
+  const bc=a==="green"?"border-l-slate-600":a==="red"?"border-l-slate-400":a==="amber"?"border-l-slate-300":"border-l-slate-300";
   return <div className={`border rounded-xl overflow-hidden border-l-4 ${bc}`}>
     <div className="px-4 py-2 bg-slate-50 border-b"><div className="text-[10px] font-semibold text-slate-600 uppercase tracking-wider">{t}</div></div>
     <div className="p-4">{children}</div>
@@ -1231,7 +1264,7 @@ function SF({l,v,opts,o}:{l:string;v:string;opts:string[];o:(v:string)=>void}){
 }
 
 function SC({l,v,c}:{l:string;v:string;c:string}){
-  const bg=c==="emerald"?"bg-emerald-50 border-emerald-200":c==="red"?"bg-red-50 border-red-200":c==="blue"?"bg-blue-50 border-blue-200":c==="amber"?"bg-amber-50 border-amber-200":"bg-slate-50 border-slate-200";
+  const bg=c==="emerald"?"bg-slate-50 border-slate-300":c==="red"?"bg-slate-50 border-slate-300":c==="blue"?"bg-slate-50 border-slate-300":c==="amber"?"bg-slate-50 border-slate-200":"bg-slate-50 border-slate-200";
   return <div className={`border rounded-lg p-3 ${bg}`}>
     <div className="text-[10px] text-slate-500 font-medium">{l}</div>
     <div className="text-sm font-bold mt-0.5">{v}</div>
