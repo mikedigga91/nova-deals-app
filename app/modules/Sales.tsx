@@ -40,6 +40,10 @@ type DealRow = {
   p1_agent_reversal_date: string | null; p1_agent_reversal_amount: number | null;
   agent_fee_amount: number | null; agent_rev_after_fee_amount: number | null;
   agent_net_price: number | null; only_agent_net_price_accounts: string | null;
+  /* Milestones */
+  design_ready_date: string | null; permit_submitted_date: string | null;
+  permit_approved_date: string | null; install_1_racks_date: string | null;
+  install_2_panel_landed_date: string | null; pto_date: string | null; paid_date: string | null;
 };
 
 const SELECT_COLUMNS = [
@@ -61,6 +65,8 @@ const SELECT_COLUMNS = [
   "paid_agent_post_p2_date","paid_agent_post_p2_amount",
   "p1_agent_reversal_date","p1_agent_reversal_amount","agent_fee_amount","agent_rev_after_fee_amount",
   "agent_net_price","only_agent_net_price_accounts",
+  "design_ready_date","permit_submitted_date","permit_approved_date",
+  "install_1_racks_date","install_2_panel_landed_date","pto_date","paid_date",
 ].join(",");
 
 /* Column definition — label, DealRow key, type */
@@ -131,6 +137,14 @@ const COLUMNS: ColDef[] = [
   { label: "Agent After Fee", key: "agent_rev_after_fee_amount", type: "money" },
   { label: "Agent Net Price", key: "agent_net_price", type: "money" },
   { label: "Only Agent Net Price", key: "only_agent_net_price_accounts", type: "text" },
+  /* Milestones */
+  { label: "Design Ready", key: "design_ready_date", type: "date" },
+  { label: "Permit Submitted", key: "permit_submitted_date", type: "date" },
+  { label: "Permit Approved", key: "permit_approved_date", type: "date" },
+  { label: "Install 1 (Racks)", key: "install_1_racks_date", type: "date" },
+  { label: "Install 2 (Panels)", key: "install_2_panel_landed_date", type: "date" },
+  { label: "PTO", key: "pto_date", type: "date" },
+  { label: "Paid", key: "paid_date", type: "date" },
 ];
 
 /* Helpers */
@@ -340,26 +354,27 @@ export default function Sales() {
         }
       }
       if (!payload.customer_name && !payload.sales_rep) { setEditMsg("At least Customer Name or Sales Rep is required."); setSaving(false); return; }
-      const { error } = await supabase.from("deals").insert(payload);
+      const { data: inserted, error } = await supabase.from("deals").insert(payload).select("id");
       if (error) { setEditMsg(`Error: ${error.message}`); setSaving(false); return; }
+      if (!inserted || inserted.length === 0) { setEditMsg("Insert failed — check database permissions."); setSaving(false); return; }
     } else {
       /* ── UPDATE existing deal ── */
       const payload: Record<string, any> = {};
       for (const col of COLUMNS) {
         const k = col.key;
-        const newVal = editDraft[k];
-        const oldVal = editRow[k];
-        if (newVal !== oldVal) {
-          if (col.type === "money" || col.type === "num") {
-            payload[k] = newVal === null || newVal === "" ? null : Number(newVal);
-          } else {
-            payload[k] = newVal === "" ? null : newVal;
-          }
-        }
+        const rawNew = editDraft[k];
+        const rawOld = editRow[k];
+        /* Normalize both sides so "7.5" vs 7.5 doesn't trigger a false diff */
+        const norm = (v: unknown) => (v == null || v === "" ? null : (col.type === "money" || col.type === "num") ? Number(v) : String(v));
+        const nNew = norm(rawNew);
+        const nOld = norm(rawOld);
+        if (nNew === nOld) continue;
+        payload[k] = nNew;
       }
       if (Object.keys(payload).length === 0) { setEditMsg("No changes."); setSaving(false); return; }
-      const { error } = await supabase.from("deals").update(payload).eq("id", editRow.id);
+      const { data: updated, error } = await supabase.from("deals").update(payload).eq("id", editRow.id).select("id");
       if (error) { setEditMsg(`Error: ${error.message}`); setSaving(false); return; }
+      if (!updated || updated.length === 0) { setEditMsg("Save failed — row not updated. Check database permissions."); setSaving(false); return; }
     }
 
     setEditRow(null); setSaving(false); setIsNew(false); load();
