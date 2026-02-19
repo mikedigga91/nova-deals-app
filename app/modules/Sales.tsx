@@ -60,6 +60,9 @@ type DealRow = {
   roof_work_needed: string | null; roof_work_progress: string | null;
   /* Permit */
   permit_ahj_info: string | null; permit_fees: number | null; permit_number: string | null;
+  permit_status: string | null; permit_fees_paid: string | null;
+  /* Utility (from view join) */
+  utility_company: string | null; ntp_status: string | null; ic_status: string | null; meter_status: string | null;
   /* HOA */
   hoa: string | null; hoa_name: string | null; hoa_forms_completed: string | null;
   /* Milestones */
@@ -111,8 +114,9 @@ const SELECT_COLUMNS = [
   "street_address","city","postal_code","country",
   "sale_type","battery_job","type_of_roof","panel_type","panel_amount",
   "roof_work_needed","roof_work_progress",
-  "permit_ahj_info","permit_fees","permit_number",
+  "permit_ahj_info","permit_fees","permit_number","permit_status","permit_fees_paid",
   "hoa","hoa_name","hoa_forms_completed",
+  "utility_company","ntp_status","ic_status","meter_status",
 ].join(",");
 
 /* ─── Milestones (ported from RepPortal) ─── */
@@ -179,7 +183,7 @@ function getDealStage(row: DealRow): string {
 /* ─── Column definitions with collapsible group support ─── */
 type ColDef = {
   label: string;
-  key: keyof DealRow | "__progress" | "__milestones" | "__stage";
+  key: keyof DealRow | "__progress" | "__milestones" | "__stage" | "__address";
   type: "text" | "money" | "num" | "date";
   group?: string;
   groupParent?: string;
@@ -193,38 +197,13 @@ const ALL_COLUMNS: ColDef[] = [
   { label: "Date Closed",        key: "date_closed",                    type: "date" },
   { label: "Customer Name",      key: "customer_name",                  type: "text" },
 
-  /* ── Customer Contact (collapsible) ── */
-  { label: "First Name",   key: "first_name",    type: "text", groupParent: "cust_contact" },
-  { label: "Last Name",    key: "last_name",     type: "text", group: "cust_contact" },
-  { label: "Phone",        key: "phone_number",  type: "text", group: "cust_contact" },
-  { label: "Email",        key: "email_address",  type: "text", group: "cust_contact" },
-
-  /* ── Address (collapsible) ── */
-  { label: "Street Address", key: "street_address", type: "text", groupParent: "address" },
-  { label: "City",           key: "city",            type: "text", group: "address" },
-  { label: "Postal Code",   key: "postal_code",     type: "text", group: "address" },
-  { label: "Country",       key: "country",          type: "text", group: "address" },
+  /* ── Contacts (toolbar toggle) ── */
+  { label: "Phone",   key: "phone_number",                  type: "text", group: "contacts" },
+  { label: "Email",   key: "email_address",                 type: "text", group: "contacts" },
+  { label: "Address", key: "__address" as keyof DealRow,    type: "text", group: "contacts", computed: true },
 
   /* ── Sale Type ── */
   { label: "Sale Type", key: "sale_type", type: "text" },
-
-  /* ── System Details (collapsible) ── */
-  { label: "Battery Job",       key: "battery_job",       type: "text", groupParent: "system" },
-  { label: "Type of Roof",      key: "type_of_roof",      type: "text", group: "system" },
-  { label: "Panel Type",        key: "panel_type",         type: "text", group: "system" },
-  { label: "Panel Amount",      key: "panel_amount",       type: "num",  group: "system" },
-  { label: "Roof Work Needed",  key: "roof_work_needed",   type: "text", group: "system" },
-  { label: "Roof Work Progress", key: "roof_work_progress", type: "text", group: "system" },
-
-  /* ── Permit Details (collapsible) ── */
-  { label: "AHJ Info",     key: "permit_ahj_info",  type: "text",  groupParent: "permit" },
-  { label: "Permit Fees",  key: "permit_fees",       type: "money", group: "permit" },
-  { label: "Permit No.",   key: "permit_number",     type: "text",  group: "permit" },
-
-  /* ── HOA Details (collapsible) ── */
-  { label: "HOA",               key: "hoa",                  type: "text", groupParent: "hoa_detail" },
-  { label: "HOA Name",          key: "hoa_name",             type: "text", group: "hoa_detail" },
-  { label: "HOA Forms Completed", key: "hoa_forms_completed", type: "text", group: "hoa_detail" },
 
   { label: "Company",            key: "company",                        type: "text" },
   { label: "Sales Rep",          key: "sales_rep",                      type: "text" },
@@ -292,9 +271,43 @@ const ALL_COLUMNS: ColDef[] = [
   { label: "Survey Date",       key: "site_survey_date_completed",   type: "date" },
   { label: "Survey Status",     key: "site_survey_status",           type: "text" },
 
+  /* ── Other Jobs (toolbar toggle) ── */
+  { label: "Battery Job",        key: "battery_job",        type: "text", group: "other_jobs" },
+  { label: "Type of Roof",       key: "type_of_roof",       type: "text", group: "other_jobs" },
+  { label: "Roof Work Needed",   key: "roof_work_needed",   type: "text", group: "other_jobs" },
+  { label: "Roof Work Progress", key: "roof_work_progress", type: "text", group: "other_jobs" },
+
+  /* ── Permitting (toolbar toggle) ── */
+  { label: "AHJ Info",          key: "permit_ahj_info",   type: "text", group: "permitting" },
+  { label: "Permit Status",     key: "permit_status",      type: "text", group: "permitting" },
+  { label: "Permit Fees Paid",  key: "permit_fees_paid",   type: "text", group: "permitting" },
+  { label: "Permit No.",        key: "permit_number",      type: "text", group: "permitting" },
+
+  /* ── HOA (toolbar toggle) ── */
+  { label: "HOA",                  key: "hoa",                  type: "text", group: "hoa_detail" },
+  { label: "HOA Name",            key: "hoa_name",             type: "text", group: "hoa_detail" },
+  { label: "HOA Forms Completed", key: "hoa_forms_completed",  type: "text", group: "hoa_detail" },
+
+  /* ── Utilities (toolbar toggle) ── */
+  { label: "Utility Co.",  key: "utility_company", type: "text", group: "utilities" },
+  { label: "NTP Status",   key: "ntp_status",      type: "text", group: "utilities" },
+  { label: "IC Status",    key: "ic_status",        type: "text", group: "utilities" },
+  { label: "Meter Status", key: "meter_status",     type: "text", group: "utilities" },
+
   /* ── Progress & Milestones (computed) ── */
   { label: "Progress",   key: "__progress" as keyof DealRow,   type: "text", computed: true },
   { label: "Milestones", key: "__milestones" as keyof DealRow,  type: "text", computed: true },
+
+  /* ── Hidden: included in EDIT_COLUMNS for save, not shown in list ── */
+  { label: "First Name",      key: "first_name",      type: "text",  group: "_save_only" },
+  { label: "Last Name",       key: "last_name",       type: "text",  group: "_save_only" },
+  { label: "Street Address",  key: "street_address",  type: "text",  group: "_save_only" },
+  { label: "City",            key: "city",             type: "text",  group: "_save_only" },
+  { label: "Postal Code",     key: "postal_code",     type: "text",  group: "_save_only" },
+  { label: "Country",         key: "country",          type: "text",  group: "_save_only" },
+  { label: "Permit Fees",     key: "permit_fees",      type: "money", group: "_save_only" },
+  { label: "Panel Type",      key: "panel_type",       type: "text",  group: "_save_only" },
+  { label: "Panel Amount",    key: "panel_amount",     type: "num",   group: "_save_only" },
 ];
 
 /* DB-backed columns only (for edit dialog & save logic) */
@@ -995,7 +1008,7 @@ export default function Sales() {
   const [endDate, setEndDate] = useState("");
 
   /* Collapsible column groups — default: main 3 collapsed, NRG Adders visible */
-  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set(["nrg_adders", "cust_contact", "address"]));
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set(["nrg_adders"]));
   function toggleGroup(groupId: string) {
     setExpandedGroups(prev => {
       const next = new Set(prev);
@@ -1428,17 +1441,28 @@ export default function Sales() {
                 Paid {showPaid ? "ON" : "OFF"}
               </button>
               {viewMode === "list" && (
-                <button
-                  className={`px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border transition ${
-                    expandedGroups.has("nrg_adders")
-                      ? "border-[#1c48a6]/30 bg-[#1c48a6]/5 text-[#1c48a6] hover:bg-[#1c48a6]/10"
-                      : "border-[#EBEFF3] bg-[#F5F7F9] text-[#6B7280] hover:bg-white"
-                  }`}
-                  onClick={() => toggleGroup("nrg_adders")}
-                  title={expandedGroups.has("nrg_adders") ? "Hide NRG Customer Adders column" : "Show NRG Customer Adders column"}
-                >
-                  NRG Adders {expandedGroups.has("nrg_adders") ? "ON" : "OFF"}
-                </button>
+                <>
+                {[
+                  { id: "contacts",   label: "Contacts" },
+                  { id: "other_jobs", label: "Other Jobs" },
+                  { id: "permitting", label: "Permitting" },
+                  { id: "hoa_detail", label: "HOA" },
+                  { id: "utilities",  label: "Utilities" },
+                  { id: "nrg_adders", label: "NRG Adders" },
+                ].map(g => (
+                  <button
+                    key={g.id}
+                    className={`px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border transition ${
+                      expandedGroups.has(g.id)
+                        ? "border-[#1c48a6]/30 bg-[#1c48a6]/5 text-[#1c48a6] hover:bg-[#1c48a6]/10"
+                        : "border-[#EBEFF3] bg-[#F5F7F9] text-[#6B7280] hover:bg-white"
+                    }`}
+                    onClick={() => toggleGroup(g.id)}
+                  >
+                    {g.label} {expandedGroups.has(g.id) ? "ON" : "OFF"}
+                  </button>
+                ))}
+                </>
               )}
               <button className={UI.buttonPrimary} onClick={openNew}>+ Add Deal</button>
             </div>
@@ -1585,6 +1609,12 @@ export default function Sales() {
                             </span>
                           </td>
                         );
+                        /* Address (computed) cell */
+                        if (col.key === "__address") return (
+                          <td key={col.key} className="px-2.5 py-2 whitespace-nowrap border-r border-[#EBEFF3]">
+                            {[r.street_address, r.city, r.postal_code, r.state].filter(Boolean).join(", ")}
+                          </td>
+                        );
                         /* Progress bar cell */
                         if (col.key === "__progress") return (
                           <td key={col.key} className="px-2.5 py-2 border-r border-[#EBEFF3] text-center">
@@ -1679,7 +1709,7 @@ const TAB0_SALE_TYPE: EditFieldDef[] = [
   { label: "Sale Type", key: "sale_type", type: "select", options: ["Call Center Deal", "D2D", "Referral"] },
 ];
 const TAB0_SYSTEM: EditFieldDef[] = [
-  { label: "Battery Job",      key: "battery_job",      type: "text" },
+  { label: "Battery Job",      key: "battery_job",      type: "select", options: ["Yes", "No"] },
   { label: "Type of Roof",     key: "type_of_roof",     type: "text" },
   { label: "Panel Type",       key: "panel_type",        type: "text" },
   { label: "Panel Amount",     key: "panel_amount",      type: "num" },
@@ -1773,9 +1803,11 @@ const TAB2_STATUS: EditFieldDef[] = [
   { label: "Status", key: "status", type: "text" },
 ];
 const TAB2_PERMIT: EditFieldDef[] = [
-  { label: "AHJ Info",     key: "permit_ahj_info", type: "text" },
-  { label: "Permit Fees",  key: "permit_fees",      type: "money" },
-  { label: "Permit No.",   key: "permit_number",    type: "text" },
+  { label: "AHJ Info",          key: "permit_ahj_info",  type: "text" },
+  { label: "Permit Status",     key: "permit_status",     type: "select", options: ["Submitted", "Revision", "Completed"] },
+  { label: "Permit Fees",       key: "permit_fees",       type: "money" },
+  { label: "Permit Fees Paid",  key: "permit_fees_paid",  type: "select", options: ["Yes", "No"] },
+  { label: "Permit No.",        key: "permit_number",     type: "text" },
 ];
 const TAB2_HOA_SELECT: EditFieldDef[] = [
   { label: "HOA", key: "hoa", type: "select", options: ["Yes", "No"] },
