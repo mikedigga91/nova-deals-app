@@ -1530,7 +1530,7 @@ export default function Sales() {
                 <tr className="text-left text-[#000000]">
                   {visibleColumns.map((col, i) => (
                     <th key={col.key}
-                      className={`px-2.5 py-2 whitespace-nowrap border-r border-[#EBEFF3] font-semibold select-none hover:bg-[#EBEFF3] transition-colors ${i === visibleColumns.length - 1 ? "border-r-0" : ""} ${col.type === "money" || col.type === "num" ? "text-right" : ""} ${col.group ? "bg-[#1c48a6]/5" : ""}`}
+                      className={`px-2.5 py-2 whitespace-nowrap border-r border-[#EBEFF3] font-semibold select-none hover:bg-[#EBEFF3] transition-colors ${i === visibleColumns.length - 1 ? "border-r-0" : ""} ${col.type === "money" || col.type === "num" ? "text-right" : ""}`}
                     >
                       <span className="inline-flex items-center gap-1">
                         {col.groupParent && (
@@ -1540,7 +1540,7 @@ export default function Sales() {
                             onClick={(e) => { e.stopPropagation(); toggleGroup(col.groupParent!); }}
                             title={expandedGroups.has(col.groupParent!) ? "Collapse sub-columns" : "Expand sub-columns"}
                           >
-                            {expandedGroups.has(col.groupParent!) ? "&#9662;" : "&#9656;"}
+                            {expandedGroups.has(col.groupParent!) ? "\u25BC" : "\u25B6"}
                           </button>
                         )}
                         <span className="cursor-pointer" onClick={() => handleSort(col)}>{col.label}</span>
@@ -1560,7 +1560,7 @@ export default function Sales() {
                 ) : displayRows.length === 0 ? (
                   <tr><td className="px-3 py-8 text-[#6B7280] text-center" colSpan={visibleColumns.length}>No results.</td></tr>
                 ) : (
-                  displayRows.map(r => {
+                  displayRows.map((r, rowIdx) => {
                     const prog = getProgress(r);
                     const rowStageKey = getDealStage(r);
                     const rowStage = PIPELINE_STAGES.find(s => s.key === rowStageKey) ?? PIPELINE_STAGES[0];
@@ -1570,7 +1570,7 @@ export default function Sales() {
                         if (rowClickTimer.current) { clearTimeout(rowClickTimer.current); rowClickTimer.current = null; openEdit(r); return; }
                         rowClickTimer.current = setTimeout(() => { rowClickTimer.current = null; setSummaryDeal(r); }, 250);
                       }}
-                      className="border-b border-[#EBEFF3] hover:bg-[#1c48a6]/5 cursor-pointer transition-colors"
+                      className={`border-b border-[#EBEFF3] hover:bg-[#1c48a6]/5 cursor-pointer transition-colors ${rowIdx % 2 === 1 ? "bg-[#F9FAFB]" : "bg-white"}`}
                     >
                       {visibleColumns.map(col => {
                         /* Stage badge cell */
@@ -1610,7 +1610,7 @@ export default function Sales() {
                         );
                         /* Standard cell */
                         return (
-                          <td key={col.key} className={`px-2.5 py-2 whitespace-nowrap border-r border-[#EBEFF3] ${col.type === "money" || col.type === "num" ? "text-right tabular-nums" : ""} ${col.group ? "bg-[#1c48a6]/5" : ""}`}>
+                          <td key={col.key} className={`px-2.5 py-2 whitespace-nowrap border-r border-[#EBEFF3] ${col.type === "money" || col.type === "num" ? "text-right tabular-nums" : ""}`}>
                             {cellVal(r, col)}
                           </td>
                         );
