@@ -42,15 +42,21 @@ type OrgEmployee = {
 
 /** All modules in the portal — keep in sync with page.tsx MenuKey */
 const ALL_MODULES: { key: string; label: string; group: string }[] = [
-  { key: "sales", label: "Sales", group: "Operations" },
-  { key: "speed", label: "Speed", group: "Operations" },
-  { key: "spp", label: "SPP Dashboard", group: "Dashboards" },
-  { key: "cc_commissions", label: "CC Commissions Overview", group: "Dashboards" },
-  { key: "payfile", label: "Pay File Generation", group: "Finance" },
-  { key: "advances", label: "Advances", group: "Finance" },
-  { key: "cc_payroll", label: "Payroll", group: "Finance" },
-  { key: "user_management", label: "User Management", group: "Admin" },
-  { key: "org_chart", label: "Org Chart", group: "Admin" },
+  { key: "sales", label: "Sales / Deals", group: "Sales & Pricing" },
+  { key: "pricing_redline", label: "Pricing / Redline Engine", group: "Sales & Pricing" },
+  { key: "commissions_engine", label: "Commission Engine", group: "Sales & Pricing" },
+  { key: "ceo_dashboard", label: "CEO Dashboard", group: "Dashboards" },
+  { key: "rep_dashboard", label: "Rep Dashboard", group: "Dashboards" },
+  { key: "manager_dashboard", label: "Manager Dashboard", group: "Dashboards" },
+  { key: "speed_pipeline", label: "Speed / Pipeline", group: "Analytics" },
+  { key: "cashflow_dashboard", label: "Cashflow Dashboard", group: "Analytics" },
+  { key: "advances", label: "Advances Tracker", group: "Finance" },
+  { key: "payroll", label: "Payroll", group: "Finance" },
+  { key: "payfile_export", label: "Payfile Export", group: "Finance" },
+  { key: "user_permissions", label: "Users & Permissions", group: "Administration" },
+  { key: "org_chart", label: "Organizational Chart", group: "Administration" },
+  { key: "audit_logs", label: "Audit Logs", group: "Administration" },
+  { key: "integrations", label: "Integrations", group: "Administration" },
 ];
 
 const DATA_SCOPES: { value: string; label: string; desc: string }[] = [
@@ -86,7 +92,7 @@ async function adminAuthAction(action: string, payload: Record<string, any>) {
 
 /* ═══════════════════ MAIN COMPONENT ═══════════════════ */
 
-export default function UserManagement() {
+export default function UserPermissions() {
   const [tab, setTab] = useState<"users" | "roles">("users");
 
   return (

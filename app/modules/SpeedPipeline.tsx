@@ -329,7 +329,7 @@ type NewDealInput = {
   date_closed: string;
 };
 
-export default function Speed() {
+export default function SpeedPipeline() {
   const [rows, setRows] = useState<DealRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState<string | null>(null);

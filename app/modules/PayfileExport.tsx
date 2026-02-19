@@ -204,7 +204,7 @@ function groupBySalesRepThenCompany(deals: PayfileDeal[]): Map<string, Map<strin
 
 /* ═══════════════════ MAIN ═══════════════════ */
 
-export default function Payfile() {
+export default function PayfileExport() {
   const [tab,setTab]=useState<"deals"|"payfile">("deals");
   useEffect(()=>{injectPrint();},[]);
   return (
