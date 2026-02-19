@@ -2,9 +2,45 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 export async function POST(req: NextRequest) {
-  const authHeader = req.headers.get("x-admin-secret");
-  if (authHeader !== process.env.SUPABASE_SERVICE_ROLE_KEY) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  // Verify caller's Supabase access token
+  const authHeader = req.headers.get("authorization");
+  if (!authHeader?.startsWith("Bearer ")) {
+    return NextResponse.json({ error: "Missing authorization header" }, { status: 401 });
+  }
+
+  const token = authHeader.slice(7);
+  const { data: { user: caller }, error: authErr } = await supabaseAdmin.auth.getUser(token);
+  if (authErr || !caller) {
+    return NextResponse.json({ error: "Invalid token" }, { status: 401 });
+  }
+
+  // Check caller has user_management module access
+  const { data: callerPortal } = await supabaseAdmin
+    .from("portal_users")
+    .select("id, role_id, module_overrides, is_active")
+    .eq("email", caller.email)
+    .single();
+
+  if (!callerPortal || !callerPortal.is_active) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  let hasAccess = false;
+  if (callerPortal.module_overrides && callerPortal.module_overrides.includes("user_management")) {
+    hasAccess = true;
+  } else if (callerPortal.role_id) {
+    const { data: role } = await supabaseAdmin
+      .from("roles")
+      .select("allowed_modules")
+      .eq("id", callerPortal.role_id)
+      .single();
+    if (role?.allowed_modules?.includes("user_management")) {
+      hasAccess = true;
+    }
+  }
+
+  if (!hasAccess) {
+    return NextResponse.json({ error: "Forbidden: user_management access required" }, { status: 403 });
   }
 
   const { email, password, display_name } = await req.json();
