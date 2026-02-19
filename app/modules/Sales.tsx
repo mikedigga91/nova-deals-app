@@ -770,6 +770,13 @@ function DealSummaryPanel({ deal, onClose, onOpenEdit, panelRef }: { deal: DealR
           <div className="text-xs text-[#6B7280] mt-0.5 truncate">
             {[deal.company, deal.state].filter(Boolean).join(" \u00B7 ") || "\u2014"}
           </div>
+          {deal.phone_number && <div className="text-[10px] text-[#6B7280] mt-0.5 truncate">{deal.phone_number}</div>}
+          {deal.email_address && <div className="text-[10px] text-[#6B7280] truncate">{deal.email_address}</div>}
+          {(deal.street_address || deal.city || deal.state || deal.postal_code) && (
+            <div className="text-[10px] text-[#6B7280] truncate">
+              {[deal.street_address, deal.city, deal.state, deal.postal_code].filter(Boolean).join(", ")}
+            </div>
+          )}
         </div>
         <button className="text-[#6B7280] hover:text-[#000000] text-base flex-shrink-0 mt-0.5" onClick={onClose}>{"\u2715"}</button>
       </div>
@@ -795,33 +802,6 @@ function DealSummaryPanel({ deal, onClose, onOpenEdit, panelRef }: { deal: DealR
           <InfoCell label="Company" value={deal.company ?? ""} />
           <InfoCell label="State" value={deal.state ?? ""} />
         </div>
-
-        {/* Customer Contact */}
-        {(deal.first_name || deal.last_name || deal.phone_number || deal.email_address) && (
-          <div>
-            <div className="text-[10px] font-semibold text-[#6B7280] uppercase tracking-wider mb-2">Customer Contact</div>
-            <div className="grid grid-cols-2 gap-2">
-              <InfoCell label="First Name" value={deal.first_name ?? ""} />
-              <InfoCell label="Last Name" value={deal.last_name ?? ""} />
-              <InfoCell label="Phone" value={deal.phone_number ?? ""} />
-              <InfoCell label="Email" value={deal.email_address ?? ""} />
-            </div>
-          </div>
-        )}
-
-        {/* Address */}
-        {(deal.street_address || deal.city || deal.postal_code || deal.country) && (
-          <div>
-            <div className="text-[10px] font-semibold text-[#6B7280] uppercase tracking-wider mb-2">Address</div>
-            <div className="grid grid-cols-2 gap-2">
-              <InfoCell label="Street" value={deal.street_address ?? ""} />
-              <InfoCell label="City" value={deal.city ?? ""} />
-              <InfoCell label="State" value={deal.state ?? ""} />
-              <InfoCell label="Postal Code" value={deal.postal_code ?? ""} />
-              <InfoCell label="Country" value={deal.country ?? ""} />
-            </div>
-          </div>
-        )}
 
         {/* Sale & System */}
         {(deal.sale_type || deal.battery_job || deal.type_of_roof || deal.panel_type || deal.panel_amount != null) && (
@@ -1694,7 +1674,6 @@ const TAB0_ADDRESS: EditFieldDef[] = [
   { label: "City",           key: "city",            type: "text" },
   { label: "State",          key: "state",           type: "text" },
   { label: "Postal Code",    key: "postal_code",     type: "text" },
-  { label: "Country",        key: "country",          type: "text" },
 ];
 const TAB0_SALE_TYPE: EditFieldDef[] = [
   { label: "Sale Type", key: "sale_type", type: "select", options: ["Call Center Deal", "D2D", "Referral"] },
