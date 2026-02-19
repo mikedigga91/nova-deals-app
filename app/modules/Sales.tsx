@@ -3,6 +3,16 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { usePortalUser } from "@/lib/usePortalUser";
+import {
+  DndContext,
+  DragOverlay,
+  useDroppable,
+  useDraggable,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import type { DragEndEvent, DragStartEvent } from "@dnd-kit/core";
 
 const PORTAL_HEADER_PX = 64;
 
@@ -40,10 +50,40 @@ type DealRow = {
   p1_agent_reversal_date: string | null; p1_agent_reversal_amount: number | null;
   agent_fee_amount: number | null; agent_rev_after_fee_amount: number | null;
   agent_net_price: number | null; only_agent_net_price_accounts: string | null;
+  /* Customer Details */
+  first_name: string | null; last_name: string | null; phone_number: string | null; email_address: string | null;
+  /* Address */
+  street_address: string | null; city: string | null; postal_code: string | null; country: string | null;
+  /* Sale & System */
+  sale_type: string | null; battery_job: string | null; type_of_roof: string | null;
+  panel_type: string | null; panel_amount: number | null;
+  roof_work_needed: string | null; roof_work_progress: string | null;
+  /* Permit */
+  permit_ahj_info: string | null; permit_fees: number | null; permit_number: string | null;
+  /* HOA */
+  hoa: string | null; hoa_name: string | null; hoa_forms_completed: string | null;
   /* Milestones */
   design_ready_date: string | null; permit_submitted_date: string | null;
   permit_approved_date: string | null; install_1_racks_date: string | null;
   install_2_panel_landed_date: string | null; pto_date: string | null; paid_date: string | null;
+};
+
+type DealUtility = {
+  id: string; deal_id: string;
+  utility_company: string | null; utility_account_number: string | null;
+  ntp_date: string | null; ntp_status: string | null;
+  ic_submitted_date: string | null; ic_status: string | null;
+  ic_approved_date: string | null;
+  meter_pending_date: string | null; meter_status: string | null;
+  meter_install_date: string | null;
+  utility_notes: string | null;
+};
+
+type DealFinance = {
+  id: string; deal_id: string;
+  finance_type: string | null; finance_company: string | null;
+  finance_status: string | null; approval_date: string | null;
+  funded_date: string | null; finance_notes: string | null;
 };
 
 const SELECT_COLUMNS = [
@@ -67,6 +107,12 @@ const SELECT_COLUMNS = [
   "agent_net_price","only_agent_net_price_accounts",
   "design_ready_date","permit_submitted_date","permit_approved_date",
   "install_1_racks_date","install_2_panel_landed_date","pto_date","paid_date",
+  "first_name","last_name","phone_number","email_address",
+  "street_address","city","postal_code","country",
+  "sale_type","battery_job","type_of_roof","panel_type","panel_amount",
+  "roof_work_needed","roof_work_progress",
+  "permit_ahj_info","permit_fees","permit_number",
+  "hoa","hoa_name","hoa_forms_completed",
 ].join(",");
 
 /* ─── Milestones (ported from RepPortal) ─── */
@@ -81,20 +127,105 @@ const MILESTONES: { key: keyof DealRow; short: string }[] = [
   { key: "paid_date",                  short: "Paid" },
 ];
 
+/* ─── Pipeline Stages (GHL-style Kanban) ─── */
+type PipelineStage = {
+  key: string;
+  label: string;
+  milestoneKey: keyof DealRow | null;
+  dot: string;
+  bg: string;
+  inactive?: boolean;
+};
+
+const PIPELINE_STAGES: PipelineStage[] = [
+  { key: "new",              label: "New",              milestoneKey: null,                          dot: "#9CA3AF", bg: "#F3F4F6" },
+  { key: "survey",           label: "Survey",           milestoneKey: "site_survey_date_completed",  dot: "#3B82F6", bg: "#EFF6FF" },
+  { key: "design",           label: "Design",           milestoneKey: "design_ready_date",           dot: "#8B5CF6", bg: "#F5F3FF" },
+  { key: "permit_submitted", label: "Permit Submitted", milestoneKey: "permit_submitted_date",       dot: "#F59E0B", bg: "#FFFBEB" },
+  { key: "permit_approved",  label: "Permit Approved",  milestoneKey: "permit_approved_date",        dot: "#10B981", bg: "#ECFDF5" },
+  { key: "install_1",        label: "Install 1 (Racks)",  milestoneKey: "install_1_racks_date",       dot: "#06B6D4", bg: "#ECFEFF" },
+  { key: "install_2",        label: "Install 2 (Panels)", milestoneKey: "install_2_panel_landed_date", dot: "#0891B2", bg: "#ECFEFF" },
+  { key: "pto",              label: "PTO",              milestoneKey: "pto_date",                    dot: "#EC4899", bg: "#FDF2F8" },
+  { key: "paid",             label: "Paid",             milestoneKey: "paid_date",                   dot: "#10B981", bg: "#ECFDF5" },
+  /* Inactive stages */
+  { key: "on_hold",    label: "On-Hold",    milestoneKey: null, dot: "#F59E0B", bg: "#FEF3C7", inactive: true },
+  { key: "cancelled",  label: "Cancelled",  milestoneKey: null, dot: "#EF4444", bg: "#FEF2F2", inactive: true },
+  { key: "inactive",   label: "Inactive",   milestoneKey: null, dot: "#9CA3AF", bg: "#F3F4F6", inactive: true },
+];
+
+const ACTIVE_STAGES = PIPELINE_STAGES.filter(s => !s.inactive);
+const INACTIVE_STAGES = PIPELINE_STAGES.filter(s => s.inactive);
+const INACTIVE_STAGE_KEYS = new Set(INACTIVE_STAGES.map(s => s.key));
+
+/* Maps stage index to last MILESTONES index that should be filled (inclusive).
+   Stage 0 (New) = -1, 1 (Survey) = 0, 2 (Design) = 1, 3 (Perm Sub) = 2,
+   4 (Perm App) = 3, 5 (Install 1) = 4, 6 (Install 2) = 5, 7 (PTO) = 6, 8 (Paid) = 7 */
+const STAGE_MILESTONE_END = [-1, 0, 1, 2, 3, 4, 5, 6, 7];
+
+function getDealStage(row: DealRow): string {
+  /* Inactive checks first */
+  const status = (row.status ?? "").trim().toLowerCase();
+  if (status === "on-hold" || status === "on hold") return "on_hold";
+  if (status === "cancelled" || status === "canceled") return "cancelled";
+  if (row.date_closed && row.date_closed < "2024-08-01") return "inactive";
+  /* Active milestone walk */
+  for (let i = ACTIVE_STAGES.length - 1; i >= 1; i--) {
+    const stage = ACTIVE_STAGES[i];
+    if (stage.milestoneKey !== null && row[stage.milestoneKey]) return stage.key;
+  }
+  return "new";
+}
+
 /* ─── Column definitions with collapsible group support ─── */
 type ColDef = {
   label: string;
-  key: keyof DealRow | "__progress" | "__milestones";
+  key: keyof DealRow | "__progress" | "__milestones" | "__stage";
   type: "text" | "money" | "num" | "date";
-  group?: string;        // child of this group (hidden when collapsed)
-  groupParent?: string;  // this col is the toggle for this group
-  computed?: boolean;     // not a DB field
+  group?: string;
+  groupParent?: string;
+  computed?: boolean;
 };
 
 const ALL_COLUMNS: ColDef[] = [
+  /* ── Stage (computed) ── */
+  { label: "Stage", key: "__stage" as keyof DealRow, type: "text", computed: true },
   /* ── Core deal info ── */
   { label: "Date Closed",        key: "date_closed",                    type: "date" },
   { label: "Customer Name",      key: "customer_name",                  type: "text" },
+
+  /* ── Customer Contact (collapsible) ── */
+  { label: "First Name",   key: "first_name",    type: "text", groupParent: "cust_contact" },
+  { label: "Last Name",    key: "last_name",     type: "text", group: "cust_contact" },
+  { label: "Phone",        key: "phone_number",  type: "text", group: "cust_contact" },
+  { label: "Email",        key: "email_address",  type: "text", group: "cust_contact" },
+
+  /* ── Address (collapsible) ── */
+  { label: "Street Address", key: "street_address", type: "text", groupParent: "address" },
+  { label: "City",           key: "city",            type: "text", group: "address" },
+  { label: "Postal Code",   key: "postal_code",     type: "text", group: "address" },
+  { label: "Country",       key: "country",          type: "text", group: "address" },
+
+  /* ── Sale Type ── */
+  { label: "Sale Type", key: "sale_type", type: "text" },
+
+  /* ── System Details (collapsible) ── */
+  { label: "Battery Job",       key: "battery_job",       type: "text", groupParent: "system" },
+  { label: "Type of Roof",      key: "type_of_roof",      type: "text", group: "system" },
+  { label: "Panel Type",        key: "panel_type",         type: "text", group: "system" },
+  { label: "Panel Amount",      key: "panel_amount",       type: "num",  group: "system" },
+  { label: "Roof Work Needed",  key: "roof_work_needed",   type: "text", group: "system" },
+  { label: "Roof Work Progress", key: "roof_work_progress", type: "text", group: "system" },
+
+  /* ── Permit Details (collapsible) ── */
+  { label: "AHJ Info",     key: "permit_ahj_info",  type: "text",  groupParent: "permit" },
+  { label: "Permit Fees",  key: "permit_fees",       type: "money", group: "permit" },
+  { label: "Permit No.",   key: "permit_number",     type: "text",  group: "permit" },
+
+  /* ── HOA Details (collapsible) ── */
+  { label: "HOA",               key: "hoa",                  type: "text", groupParent: "hoa_detail" },
+  { label: "HOA Name",          key: "hoa_name",             type: "text", group: "hoa_detail" },
+  { label: "HOA Forms Completed", key: "hoa_forms_completed", type: "text", group: "hoa_detail" },
+
   { label: "Company",            key: "company",                        type: "text" },
   { label: "Sales Rep",          key: "sales_rep",                      type: "text" },
   { label: "Appointment Setter", key: "appointment_setter",             type: "text" },
@@ -161,7 +292,7 @@ const ALL_COLUMNS: ColDef[] = [
   { label: "Survey Date",       key: "site_survey_date_completed",   type: "date" },
   { label: "Survey Status",     key: "site_survey_status",           type: "text" },
 
-  /* ── Progress & Milestones (computed — replaces individual milestone date cols) ── */
+  /* ── Progress & Milestones (computed) ── */
   { label: "Progress",   key: "__progress" as keyof DealRow,   type: "text", computed: true },
   { label: "Milestones", key: "__milestones" as keyof DealRow,  type: "text", computed: true },
 ];
@@ -177,21 +308,37 @@ function progressColor(pct: number): string {
   if (pct >= 88) return "text-emerald-600";
   if (pct >= 50) return "text-amber-600";
   if (pct >= 25) return "text-orange-500";
-  return "text-slate-400";
+  return "text-[#6B7280]";
 }
 function progressBg(pct: number): string {
   if (pct >= 88) return "bg-emerald-500";
   if (pct >= 50) return "bg-amber-500";
   if (pct >= 25) return "bg-orange-400";
-  return "bg-slate-300";
+  return "bg-[#EBEFF3]";
 }
 function getProgress(row: DealRow): { completed: number; total: number; pct: number } {
   let completed = 0;
   for (const m of MILESTONES) { if (row[m.key]) completed++; }
   return { completed, total: 8, pct: Math.round((completed / 8) * 100) };
 }
+function getDealAging(row: DealRow): { totalDays: number; stageDays: number } {
+  const now = Date.now();
+  const closed = row.date_closed ? new Date(row.date_closed + "T00:00:00").getTime() : NaN;
+  const totalDays = Number.isNaN(closed) ? 0 : Math.max(0, Math.floor((now - closed) / 86_400_000));
+  let latest = closed;
+  for (const m of MILESTONES) {
+    const v = row[m.key];
+    if (v) {
+      const t = new Date((v as string) + "T00:00:00").getTime();
+      if (!Number.isNaN(t) && (Number.isNaN(latest) || t > latest)) latest = t;
+    }
+  }
+  const stageDays = Number.isNaN(latest) ? totalDays : Math.max(0, Math.floor((now - latest) / 86_400_000));
+  return { totalDays, stageDays };
+}
+
 function cellVal(row: DealRow, col: ColDef): string {
-  if (col.computed) return ""; // Progress & Milestones render custom JSX, not text
+  if (col.computed) return "";
   const v = row[col.key as keyof DealRow];
   if (v == null) return "";
   if (col.type === "money") return money(v as number);
@@ -205,15 +352,16 @@ function uniqSorted(vals: Array<string | null | undefined>) {
   return Array.from(set).sort((a, b) => a.localeCompare(b));
 }
 
+/* ─── GHL Color Palette ─── */
 const UI = {
-  card: "bg-white rounded-xl border border-slate-200/60 shadow-sm",
-  control: "w-full rounded-lg border border-slate-200/70 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-slate-200",
-  buttonPrimary: "px-3 py-2 rounded-lg bg-slate-900 text-white text-sm shadow-sm hover:bg-slate-800 active:scale-[0.99] transition",
-  buttonGhost: "px-3 py-2 rounded-lg border border-slate-200 text-sm bg-white hover:bg-slate-50 active:scale-[0.99] transition",
-  pill: "inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-semibold border border-slate-200/70 bg-slate-50 text-slate-700",
+  card: "bg-white rounded-xl border border-[#EBEFF3] shadow-sm",
+  control: "w-full rounded-lg border border-[#EBEFF3] bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#7096e6]/30",
+  buttonPrimary: "px-3 py-2 rounded-lg bg-[#1c48a6] text-white text-sm shadow-sm hover:bg-[#7096e6] active:scale-[0.99] transition",
+  buttonGhost: "px-3 py-2 rounded-lg border border-[#EBEFF3] text-sm bg-white hover:bg-[#F5F7F9] active:scale-[0.99] transition",
+  pill: "inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-semibold border border-[#EBEFF3] bg-[#F5F7F9] text-[#6B7280]",
 };
 
-/* ═══ MultiSelect (same as SPPDashboard) ═══ */
+/* ═══ MultiSelect ═══ */
 function MultiSelect({ label, options, selected, onChange, placeholder }: { label: string; options: string[]; selected: string[]; onChange: (v: string[]) => void; placeholder?: string }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
@@ -225,31 +373,614 @@ function MultiSelect({ label, options, selected, onChange, placeholder }: { labe
   const text = selected.length === 0 ? (placeholder ?? "All") : selected.length === 1 ? selected[0] : `${selected.length} selected`;
   return (
     <div ref={ref}>
-      <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">{label}</div>
+      <div className="text-[10px] font-semibold text-[#6B7280] uppercase tracking-wider mb-1">{label}</div>
       <div className="relative">
         <button type="button" className={`w-full ${UI.control} text-left flex items-center justify-between gap-2`} onClick={() => setOpen(s => !s)}>
-          <span className={`truncate ${selected.length === 0 ? "text-slate-400" : "text-slate-900"}`}>{text}</span>
-          <span className="text-slate-400 text-[10px]">▾</span>
+          <span className={`truncate ${selected.length === 0 ? "text-[#6B7280]" : "text-[#000000]"}`}>{text}</span>
+          <span className="text-[#6B7280] text-[10px]">&#9662;</span>
         </button>
         {open && (
-          <div className="absolute z-50 mt-1 w-full rounded-xl border border-slate-200/70 bg-white shadow-lg overflow-hidden">
-            <div className="p-2 border-b border-slate-200/60">
+          <div className="absolute z-50 mt-1 w-full rounded-xl border border-[#EBEFF3] bg-white shadow-lg overflow-hidden">
+            <div className="p-2 border-b border-[#EBEFF3]">
               <input className={UI.control} placeholder="Search..." value={q} onChange={e => setQ(e.target.value)} />
               <div className="mt-1.5 flex items-center justify-between">
-                <span className="text-[10px] text-slate-400">{selected.length === 0 ? "All" : `${selected.length} selected`}</span>
-                <button type="button" className="text-[10px] font-semibold text-slate-600 hover:text-slate-900" onClick={() => onChange([])}>Clear</button>
+                <span className="text-[10px] text-[#6B7280]">{selected.length === 0 ? "All" : `${selected.length} selected`}</span>
+                <button type="button" className="text-[10px] font-semibold text-[#6B7280] hover:text-[#000000]" onClick={() => onChange([])}>Clear</button>
               </div>
             </div>
             <div className="max-h-56 overflow-auto">
-              {filtered.length === 0 ? <div className="px-3 py-3 text-sm text-slate-400">No matches.</div> : filtered.map(opt => (
-                <label key={opt} className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-slate-50 cursor-pointer select-none">
-                  <input type="checkbox" checked={selSet.has(opt)} onChange={() => toggle(opt)} />
+              {filtered.length === 0 ? <div className="px-3 py-3 text-sm text-[#6B7280]">No matches.</div> : filtered.map(opt => (
+                <label key={opt} className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-[#F5F7F9] cursor-pointer select-none">
+                  <input type="checkbox" checked={selSet.has(opt)} onChange={() => toggle(opt)} className="accent-[#1c48a6]" />
                   <span className="truncate">{opt}</span>
                 </label>
               ))}
             </div>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+/* ═══ Kanban Components ═══ */
+
+function StageColumn({ stage, deals, onCardClick, onCardDoubleClick, inactive }: { stage: PipelineStage; deals: DealRow[]; onCardClick: (d: DealRow) => void; onCardDoubleClick: (d: DealRow) => void; inactive?: boolean }) {
+  const { setNodeRef, isOver } = useDroppable({ id: stage.key, disabled: !!inactive });
+  const totalValue = deals.reduce((sum, d) => sum + (d.contract_value ?? 0), 0);
+  const colWidth = inactive ? 240 : 280;
+
+  return (
+    <div ref={setNodeRef} className="flex flex-col min-h-0" style={{ width: colWidth, minWidth: colWidth, opacity: inactive ? 0.8 : 1 }}>
+      {/* Header */}
+      <div className="px-3 py-2.5 border-b border-[#EBEFF3] flex-shrink-0" style={{ backgroundColor: stage.bg }}>
+        <div className="flex items-center gap-2">
+          <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: stage.dot }} />
+          <span className="text-sm font-semibold text-[#000000]">{stage.label}</span>
+          <span className="text-[11px] text-[#6B7280] bg-white rounded-full px-1.5 py-0.5 font-medium">{deals.length}</span>
+          {inactive && <span className="text-[9px] text-[#9CA3AF] uppercase tracking-wider font-medium">inactive</span>}
+        </div>
+        <div className="text-xs text-[#6B7280] mt-0.5">{money(totalValue)}</div>
+      </div>
+      {/* Body */}
+      <div className={`flex-1 overflow-y-auto p-2 space-y-2 transition-colors ${isOver && !inactive ? "bg-[#1c48a6]/5" : "bg-[#F5F7F9]"}`}>
+        {deals.map(deal => (
+          <DealCard key={deal.id} deal={deal} onCardClick={onCardClick} onCardDoubleClick={onCardDoubleClick} inactive={inactive} />
+        ))}
+        {deals.length === 0 && (
+          <div className="text-center text-xs text-[#6B7280] py-6">No deals</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DealCard({ deal, onCardClick, onCardDoubleClick, inactive }: { deal: DealRow; onCardClick: (d: DealRow) => void; onCardDoubleClick: (d: DealRow) => void; inactive?: boolean }) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: deal.id,
+    data: { deal },
+    disabled: !!inactive,
+  });
+
+  const clickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleClick = useCallback(() => {
+    if (clickTimer.current) { clearTimeout(clickTimer.current); clickTimer.current = null; onCardDoubleClick(deal); return; }
+    clickTimer.current = setTimeout(() => { clickTimer.current = null; onCardClick(deal); }, 250);
+  }, [deal, onCardClick, onCardDoubleClick]);
+
+  const aging = getDealAging(deal);
+
+  return (
+    <div
+      ref={setNodeRef}
+      {...attributes}
+      {...listeners}
+      style={{ opacity: isDragging ? 0.4 : 1 }}
+      className={`bg-white rounded-lg border border-[#EBEFF3] shadow-sm p-3 hover:shadow-md transition-shadow ${inactive ? "cursor-pointer" : "cursor-grab active:cursor-grabbing"}`}
+      onClick={handleClick}
+      title={`Age: ${aging.totalDays}d | In stage: ${aging.stageDays}d`}
+    >
+      <div className="font-semibold text-sm text-[#000000] truncate">{deal.customer_name || "Untitled"}</div>
+      <div className="text-base font-bold text-[#1c48a6] mt-1">{money(deal.contract_value)}</div>
+      <div className="flex items-center gap-3 mt-1.5 text-xs text-[#6B7280]">
+        {deal.kw_system != null && <span>{numFmt(deal.kw_system)} kW</span>}
+        {deal.sales_rep && <span className="truncate">{deal.sales_rep}</span>}
+      </div>
+      {/* Milestone dots */}
+      <div className="flex items-center gap-1 mt-2">
+        {MILESTONES.map(m => (
+          <div
+            key={m.key}
+            title={`${m.short}: ${deal[m.key] ? fmtDate(deal[m.key] as string) : "Pending"}`}
+            className="w-2 h-2 rounded-full"
+            style={{ backgroundColor: deal[m.key] ? "#1c48a6" : "#E5E7EB" }}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function DealCardOverlay({ deal }: { deal: DealRow }) {
+  return (
+    <div className="bg-white rounded-lg border-2 border-[#1c48a6] shadow-lg p-3" style={{ width: 264 }}>
+      <div className="font-semibold text-sm text-[#000000] truncate">{deal.customer_name || "Untitled"}</div>
+      <div className="text-base font-bold text-[#1c48a6] mt-1">{money(deal.contract_value)}</div>
+      <div className="flex items-center gap-3 mt-1.5 text-xs text-[#6B7280]">
+        {deal.kw_system != null && <span>{numFmt(deal.kw_system)} kW</span>}
+        {deal.sales_rep && <span className="truncate">{deal.sales_rep}</span>}
+      </div>
+      <div className="flex items-center gap-1 mt-2">
+        {MILESTONES.map(m => (
+          <div key={m.key} className="w-2 h-2 rounded-full" style={{ backgroundColor: deal[m.key] ? "#1c48a6" : "#E5E7EB" }} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ═══ InfoCell — small metric card for the summary panel ═══ */
+function InfoCell({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="border border-[#EBEFF3] rounded-lg px-3 py-2">
+      <div className="text-[10px] font-semibold text-[#6B7280] uppercase tracking-wider">{label}</div>
+      <div className="text-sm font-medium text-[#000000] mt-0.5 truncate">{value || "—"}</div>
+    </div>
+  );
+}
+
+/* ═══ ListSummaryBar — full-width dashboard above list view ═══ */
+type StageStat = { stage: PipelineStage; count: number; value: number; recent: number; prior: number; milestoneTotal: number; milestoneDone: number };
+type MilestoneAgg = { key: string; short: string; done: number; total: number };
+
+function ListSummaryBar({ stageStats, totals, milestoneAgg }: {
+  stageStats: StageStat[];
+  totals: { count: number; value: number; recent: number; prior: number; milestoneTotal: number; milestoneDone: number };
+  milestoneAgg: MilestoneAgg[];
+}) {
+  const milestonePct = totals.milestoneTotal > 0 ? Math.round((totals.milestoneDone / totals.milestoneTotal) * 100) : 0;
+  const maxCount = Math.max(1, ...stageStats.map(s => s.count));
+  const maxValue = Math.max(1, ...stageStats.map(s => s.value));
+  const trendDelta = totals.recent - totals.prior;
+  const trendPctVal = totals.prior > 0 ? Math.round((trendDelta / totals.prior) * 100) : totals.recent > 0 ? 100 : 0;
+
+  /* Collapsible */
+  const [expanded, setExpanded] = useState(true);
+
+  return (
+    <div className="border-b border-[#EBEFF3] bg-[#F9FAFB]">
+      {/* Toggle header */}
+      <button
+        type="button"
+        className="w-full flex items-center justify-between px-4 py-1.5 text-[10px] font-semibold text-[#6B7280] uppercase tracking-wider hover:bg-[#EBEFF3]/50 transition-colors"
+        onClick={() => setExpanded(v => !v)}
+      >
+        <span>Dashboard Summary</span>
+        <span className="text-[10px]">{expanded ? "\u25B2" : "\u25BC"}</span>
+      </button>
+
+      {expanded && (
+        <div className="px-4 pb-3 space-y-3">
+
+          {/* ── Row 1: KPI cards ── */}
+          <div className="grid grid-cols-4 gap-3">
+            {/* Total Deals */}
+            <div className="rounded-xl border border-[#EBEFF3] bg-white p-3">
+              <div className="text-[10px] font-semibold text-[#6B7280] uppercase tracking-wider">Total Deals</div>
+              <div className="text-2xl font-bold text-[#000000] mt-1 tabular-nums">{totals.count}</div>
+              <div className="text-[10px] text-[#6B7280] mt-0.5">{stageStats.filter(s => !s.stage.inactive).length} active stages</div>
+            </div>
+            {/* Pipeline Value */}
+            <div className="rounded-xl border border-[#EBEFF3] bg-white p-3">
+              <div className="text-[10px] font-semibold text-[#6B7280] uppercase tracking-wider">Pipeline Value</div>
+              <div className="text-2xl font-bold text-[#1c48a6] mt-1 tabular-nums">{money(totals.value)}</div>
+              <div className="text-[10px] text-[#6B7280] mt-0.5">
+                Avg {totals.count > 0 ? money(totals.value / totals.count) : "$0"}/deal
+              </div>
+            </div>
+            {/* 30d Trend */}
+            <div className="rounded-xl border border-[#EBEFF3] bg-white p-3">
+              <div className="text-[10px] font-semibold text-[#6B7280] uppercase tracking-wider">30-Day Trend</div>
+              <div className="flex items-baseline gap-2 mt-1">
+                <span className={`text-2xl font-bold tabular-nums ${trendDelta > 0 ? "text-emerald-600" : trendDelta < 0 ? "text-red-500" : "text-[#6B7280]"}`}>
+                  {trendDelta > 0 ? "+" : ""}{trendDelta}
+                </span>
+                {trendPctVal !== 0 && (
+                  <span className={`text-xs font-semibold ${trendDelta > 0 ? "text-emerald-600" : "text-red-500"}`}>
+                    {trendDelta > 0 ? "\u25B2" : "\u25BC"} {Math.abs(trendPctVal)}%
+                  </span>
+                )}
+              </div>
+              <div className="text-[10px] text-[#6B7280] mt-0.5">{totals.recent} new vs {totals.prior} prior 30d</div>
+            </div>
+            {/* Milestone Completion */}
+            <div className="rounded-xl border border-[#EBEFF3] bg-white p-3">
+              <div className="text-[10px] font-semibold text-[#6B7280] uppercase tracking-wider">Milestones</div>
+              <div className="flex items-baseline gap-2 mt-1">
+                <span className={`text-2xl font-bold tabular-nums ${progressColor(milestonePct)}`}>{milestonePct}%</span>
+                <span className="text-[10px] text-[#9CA3AF]">{totals.milestoneDone}/{totals.milestoneTotal}</span>
+              </div>
+              <div className="w-full h-2 rounded-full bg-[#EBEFF3] overflow-hidden mt-1.5">
+                <div className={`h-full rounded-full ${progressBg(milestonePct)} transition-all`} style={{ width: `${milestonePct}%` }} />
+              </div>
+            </div>
+          </div>
+
+          {/* ── Row 2: Charts ── */}
+          <div className="grid grid-cols-3 gap-3">
+
+            {/* Deal Count Bar Chart */}
+            <div className="rounded-xl border border-[#EBEFF3] bg-white p-3">
+              <div className="text-[10px] font-semibold text-[#6B7280] uppercase tracking-wider mb-2">Deals by Stage</div>
+              <div className="space-y-1.5">
+                {stageStats.map(s => {
+                  const pct = maxCount > 0 ? (s.count / maxCount) * 100 : 0;
+                  return (
+                    <div key={s.stage.key} className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: s.stage.dot }} />
+                      <span className="text-[10px] text-[#000000] w-[90px] truncate flex-shrink-0">{s.stage.label}</span>
+                      <div className="flex-1 h-4 rounded bg-[#F3F4F6] overflow-hidden relative">
+                        <div
+                          className="h-full rounded transition-all"
+                          style={{ width: `${pct}%`, backgroundColor: s.stage.dot, opacity: 0.7 }}
+                        />
+                        {s.count > 0 && (
+                          <span className="absolute inset-0 flex items-center pl-1.5 text-[10px] font-bold text-[#000000]">{s.count}</span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Value Distribution Bar Chart */}
+            <div className="rounded-xl border border-[#EBEFF3] bg-white p-3">
+              <div className="text-[10px] font-semibold text-[#6B7280] uppercase tracking-wider mb-2">Value by Stage</div>
+              <div className="space-y-1.5">
+                {stageStats.map(s => {
+                  const pct = maxValue > 0 ? (s.value / maxValue) * 100 : 0;
+                  return (
+                    <div key={s.stage.key} className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: s.stage.dot }} />
+                      <span className="text-[10px] text-[#000000] w-[90px] truncate flex-shrink-0">{s.stage.label}</span>
+                      <div className="flex-1 h-4 rounded bg-[#F3F4F6] overflow-hidden relative">
+                        <div
+                          className="h-full rounded transition-all"
+                          style={{ width: `${pct}%`, backgroundColor: s.stage.dot, opacity: 0.7 }}
+                        />
+                        {s.value > 0 && (
+                          <span className="absolute inset-0 flex items-center justify-end pr-1.5 text-[10px] font-bold text-[#000000] tabular-nums">{money(s.value)}</span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Milestone Completion Chart */}
+            <div className="rounded-xl border border-[#EBEFF3] bg-white p-3">
+              <div className="text-[10px] font-semibold text-[#6B7280] uppercase tracking-wider mb-2">Milestone Completion</div>
+              <div className="space-y-1.5">
+                {milestoneAgg.map(m => {
+                  const pct = m.total > 0 ? Math.round((m.done / m.total) * 100) : 0;
+                  return (
+                    <div key={m.key} className="flex items-center gap-2">
+                      <span className="text-[10px] text-[#000000] w-[52px] truncate flex-shrink-0">{m.short}</span>
+                      <div className="flex-1 h-4 rounded bg-[#F3F4F6] overflow-hidden relative">
+                        <div
+                          className={`h-full rounded transition-all ${progressBg(pct)}`}
+                          style={{ width: `${pct}%` }}
+                        />
+                        <span className="absolute inset-0 flex items-center justify-end pr-1.5 text-[10px] font-bold text-[#000000] tabular-nums">{pct}%</span>
+                      </div>
+                      <span className="text-[9px] text-[#9CA3AF] w-[40px] text-right tabular-nums flex-shrink-0">{m.done}/{m.total}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* ── Row 3: Pipeline funnel — stacked horizontal bar ── */}
+          <div className="rounded-xl border border-[#EBEFF3] bg-white p-3">
+            <div className="text-[10px] font-semibold text-[#6B7280] uppercase tracking-wider mb-2">Pipeline Funnel</div>
+            {totals.count > 0 ? (
+              <div className="flex h-7 rounded-lg overflow-hidden">
+                {stageStats.map(s => {
+                  const pct = (s.count / totals.count) * 100;
+                  if (pct === 0) return null;
+                  return (
+                    <div
+                      key={s.stage.key}
+                      className="h-full flex items-center justify-center relative group"
+                      style={{ width: `${pct}%`, backgroundColor: s.stage.dot, minWidth: pct > 3 ? undefined : 4 }}
+                      title={`${s.stage.label}: ${s.count} deals (${Math.round(pct)}%) — ${money(s.value)}`}
+                    >
+                      {pct > 6 && (
+                        <span className="text-[9px] font-bold text-white truncate px-1">{s.count}</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="h-7 rounded-lg bg-[#F3F4F6] flex items-center justify-center text-[10px] text-[#9CA3AF]">No deals</div>
+            )}
+            {/* Legend */}
+            <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2">
+              {stageStats.filter(s => s.count > 0).map(s => (
+                <div key={s.stage.key} className="flex items-center gap-1">
+                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: s.stage.dot }} />
+                  <span className="text-[10px] text-[#6B7280]">{s.stage.label}</span>
+                  <span className="text-[10px] font-semibold text-[#000000]">{s.count}</span>
+                  <span className="text-[10px] text-[#9CA3AF]">({Math.round((s.count / totals.count) * 100)}%)</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ═══ DealSummaryPanel — right-side detail panel ═══ */
+
+const UTILITY_STEPS: { key: keyof DealUtility; label: string; statusKey?: keyof DealUtility }[] = [
+  { key: "ntp_date", label: "NTP", statusKey: "ntp_status" },
+  { key: "ic_submitted_date", label: "IC Submitted", statusKey: "ic_status" },
+  { key: "ic_approved_date", label: "IC Approved" },
+  { key: "meter_pending_date", label: "Meter Pending", statusKey: "meter_status" },
+  { key: "meter_install_date", label: "Meter Install" },
+];
+
+function DealSummaryPanel({ deal, onClose, onOpenEdit, panelRef }: { deal: DealRow; onClose: () => void; onOpenEdit: (d: DealRow) => void; panelRef?: React.RefObject<HTMLDivElement | null> }) {
+  const stageKey = getDealStage(deal);
+  const stage = PIPELINE_STAGES.find(s => s.key === stageKey) ?? PIPELINE_STAGES[0];
+  const prog = getProgress(deal);
+
+  /* Extra data from new tables */
+  const [utility, setUtility] = useState<DealUtility | null>(null);
+  const [finance, setFinance] = useState<DealFinance | null>(null);
+  const [extraLoading, setExtraLoading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setExtraLoading(true);
+    setUtility(null);
+    setFinance(null);
+    Promise.all([
+      supabase.from("deal_utility").select("*").eq("deal_id", deal.id).maybeSingle(),
+      supabase.from("deal_finance").select("*").eq("deal_id", deal.id).maybeSingle(),
+    ]).then(([uRes, fRes]) => {
+      if (cancelled) return;
+      if (uRes.data) setUtility(uRes.data as DealUtility);
+      if (fRes.data) setFinance(fRes.data as DealFinance);
+      setExtraLoading(false);
+    }).catch(() => { if (!cancelled) setExtraLoading(false); });
+    return () => { cancelled = true; };
+  }, [deal.id]);
+
+  /* Close on Escape */
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", h);
+    return () => document.removeEventListener("keydown", h);
+  }, [onClose]);
+
+  const financeTypeBadge = (type: string | null) => {
+    if (!type) return null;
+    const t = type.toLowerCase();
+    const color = t === "cash" ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+      : t === "loan" ? "bg-blue-50 text-blue-700 border-blue-200"
+      : t === "lease" ? "bg-purple-50 text-purple-700 border-purple-200"
+      : "bg-[#F5F7F9] text-[#6B7280] border-[#EBEFF3]";
+    return <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-semibold border ${color}`}>{type}</span>;
+  };
+
+  return (
+    <div ref={panelRef} className="flex-shrink-0 border-l border-[#EBEFF3] bg-white overflow-y-auto" style={{ width: 360 }}>
+      {/* Header */}
+      <div className="px-4 py-3 border-b border-[#EBEFF3] flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="text-sm font-bold text-[#000000] truncate">{deal.customer_name || "Untitled"}</div>
+          <div className="text-xs text-[#6B7280] mt-0.5 truncate">
+            {[deal.company, deal.state].filter(Boolean).join(" \u00B7 ") || "\u2014"}
+          </div>
+        </div>
+        <button className="text-[#6B7280] hover:text-[#000000] text-base flex-shrink-0 mt-0.5" onClick={onClose}>{"\u2715"}</button>
+      </div>
+
+      <div className="px-4 py-3 space-y-4">
+        {/* Stage badge */}
+        <div>
+          <span
+            className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold"
+            style={{ backgroundColor: stage.bg, color: stage.dot, border: `1px solid ${stage.dot}30` }}
+          >
+            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: stage.dot }} />
+            {stage.label}
+          </span>
+        </div>
+
+        {/* Key metrics grid */}
+        <div className="grid grid-cols-2 gap-2">
+          <InfoCell label="Contract Value" value={money(deal.contract_value)} />
+          <InfoCell label="kW System" value={deal.kw_system != null ? numFmt(deal.kw_system) : ""} />
+          <InfoCell label="Sales Rep" value={deal.sales_rep ?? ""} />
+          <InfoCell label="Date Closed" value={fmtDate(deal.date_closed)} />
+          <InfoCell label="Company" value={deal.company ?? ""} />
+          <InfoCell label="State" value={deal.state ?? ""} />
+        </div>
+
+        {/* Customer Contact */}
+        {(deal.first_name || deal.last_name || deal.phone_number || deal.email_address) && (
+          <div>
+            <div className="text-[10px] font-semibold text-[#6B7280] uppercase tracking-wider mb-2">Customer Contact</div>
+            <div className="grid grid-cols-2 gap-2">
+              <InfoCell label="First Name" value={deal.first_name ?? ""} />
+              <InfoCell label="Last Name" value={deal.last_name ?? ""} />
+              <InfoCell label="Phone" value={deal.phone_number ?? ""} />
+              <InfoCell label="Email" value={deal.email_address ?? ""} />
+            </div>
+          </div>
+        )}
+
+        {/* Address */}
+        {(deal.street_address || deal.city || deal.postal_code || deal.country) && (
+          <div>
+            <div className="text-[10px] font-semibold text-[#6B7280] uppercase tracking-wider mb-2">Address</div>
+            <div className="grid grid-cols-2 gap-2">
+              <InfoCell label="Street" value={deal.street_address ?? ""} />
+              <InfoCell label="City" value={deal.city ?? ""} />
+              <InfoCell label="State" value={deal.state ?? ""} />
+              <InfoCell label="Postal Code" value={deal.postal_code ?? ""} />
+              <InfoCell label="Country" value={deal.country ?? ""} />
+            </div>
+          </div>
+        )}
+
+        {/* Sale & System */}
+        {(deal.sale_type || deal.battery_job || deal.type_of_roof || deal.panel_type || deal.panel_amount != null) && (
+          <div>
+            <div className="text-[10px] font-semibold text-[#6B7280] uppercase tracking-wider mb-2">Sale & System</div>
+            <div className="grid grid-cols-2 gap-2">
+              <InfoCell label="Sale Type" value={deal.sale_type ?? ""} />
+              <InfoCell label="Battery" value={deal.battery_job ?? ""} />
+              <InfoCell label="Roof Type" value={deal.type_of_roof ?? ""} />
+              <InfoCell label="Panel Type" value={deal.panel_type ?? ""} />
+              <InfoCell label="Panel Amount" value={deal.panel_amount != null ? String(deal.panel_amount) : ""} />
+              {deal.roof_work_needed === "Yes" && (
+                <InfoCell label="Roof Work Progress" value={deal.roof_work_progress ?? ""} />
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Permit Details */}
+        {(deal.permit_ahj_info || deal.permit_fees != null || deal.permit_number) && (
+          <div>
+            <div className="text-[10px] font-semibold text-[#6B7280] uppercase tracking-wider mb-2">Permit Details</div>
+            <div className="grid grid-cols-2 gap-2">
+              <InfoCell label="AHJ Info" value={deal.permit_ahj_info ?? ""} />
+              <InfoCell label="Permit Fees" value={money(deal.permit_fees)} />
+              <InfoCell label="Permit No." value={deal.permit_number ?? ""} />
+            </div>
+          </div>
+        )}
+
+        {/* HOA */}
+        {deal.hoa === "Yes" && (
+          <div>
+            <div className="text-[10px] font-semibold text-[#6B7280] uppercase tracking-wider mb-2">HOA</div>
+            <div className="grid grid-cols-2 gap-2">
+              <InfoCell label="HOA Name" value={deal.hoa_name ?? ""} />
+              <InfoCell label="Forms Completed" value={deal.hoa_forms_completed ?? ""} />
+            </div>
+          </div>
+        )}
+
+        {/* Progress bar */}
+        <div>
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-[10px] font-semibold text-[#6B7280] uppercase tracking-wider">Progress</span>
+            <span className={`text-xs font-bold tabular-nums ${progressColor(prog.pct)}`}>{prog.pct}%</span>
+          </div>
+          <div className="w-full h-2 rounded-full bg-[#EBEFF3] overflow-hidden">
+            <div className={`h-full rounded-full ${progressBg(prog.pct)} transition-all`} style={{ width: `${prog.pct}%` }} />
+          </div>
+        </div>
+
+        {/* Milestone Timeline */}
+        <div>
+          <div className="text-[10px] font-semibold text-[#6B7280] uppercase tracking-wider mb-2">Milestones</div>
+          <div className="space-y-0">
+            {MILESTONES.map((m, i) => {
+              const done = !!deal[m.key];
+              return (
+                <div key={m.key} className="flex items-start gap-3">
+                  {/* Vertical line + dot */}
+                  <div className="flex flex-col items-center" style={{ width: 16 }}>
+                    <div className={`w-3 h-3 rounded-full border-2 flex-shrink-0 ${done ? "bg-[#1c48a6] border-[#1c48a6]" : "bg-white border-[#D1D5DB]"}`} />
+                    {i < MILESTONES.length - 1 && <div className="w-0.5 flex-1 min-h-[20px]" style={{ backgroundColor: done ? "#1c48a6" : "#E5E7EB" }} />}
+                  </div>
+                  <div className="pb-3 min-w-0">
+                    <div className={`text-xs font-medium ${done ? "text-[#000000]" : "text-[#9CA3AF]"}`}>{m.short}</div>
+                    {done && <div className="text-[10px] text-[#6B7280]">{fmtDate(deal[m.key] as string)}</div>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Notes */}
+        {deal.notes && (
+          <div>
+            <div className="text-[10px] font-semibold text-[#6B7280] uppercase tracking-wider mb-1">Notes</div>
+            <div className="text-xs text-[#000000] bg-[#F5F7F9] rounded-lg px-3 py-2 whitespace-pre-wrap">{deal.notes}</div>
+          </div>
+        )}
+
+        {/* ── Adder Details ── */}
+        <div>
+          <div className="text-[10px] font-semibold text-[#6B7280] uppercase tracking-wider mb-2">Adder Details</div>
+          <div className="grid grid-cols-2 gap-2">
+            <InfoCell label="Total Adders" value={money(deal.total_adders)} />
+            <InfoCell label="NRG Customer Adders" value={money(deal.nova_nrg_customer_adders)} />
+          </div>
+        </div>
+
+        {/* ── Utility Progress ── */}
+        <div>
+          <div className="text-[10px] font-semibold text-[#6B7280] uppercase tracking-wider mb-2">Utility Progress</div>
+          {extraLoading ? (
+            <div className="text-xs text-[#6B7280]">Loading...</div>
+          ) : !utility ? (
+            <div className="text-xs text-[#9CA3AF]">No utility data</div>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 gap-2 mb-3">
+                <InfoCell label="Utility Company" value={utility.utility_company ?? ""} />
+                <InfoCell label="Account #" value={utility.utility_account_number ?? ""} />
+              </div>
+              <div className="space-y-0">
+                {UTILITY_STEPS.map((step, i) => {
+                  const dateVal = utility[step.key] as string | null;
+                  const done = !!dateVal;
+                  const statusVal = step.statusKey ? (utility[step.statusKey] as string | null) : null;
+                  return (
+                    <div key={step.key} className="flex items-start gap-3">
+                      <div className="flex flex-col items-center" style={{ width: 16 }}>
+                        <div className={`w-3 h-3 rounded-full border-2 flex-shrink-0 ${done ? "bg-[#06B6D4] border-[#06B6D4]" : "bg-white border-[#D1D5DB]"}`} />
+                        {i < UTILITY_STEPS.length - 1 && <div className="w-0.5 flex-1 min-h-[20px]" style={{ backgroundColor: done ? "#06B6D4" : "#E5E7EB" }} />}
+                      </div>
+                      <div className="pb-3 min-w-0">
+                        <div className={`text-xs font-medium ${done ? "text-[#000000]" : "text-[#9CA3AF]"}`}>{step.label}</div>
+                        {done && <div className="text-[10px] text-[#6B7280]">{fmtDate(dateVal)}</div>}
+                        {statusVal && <div className="text-[10px] text-[#6B7280]">{statusVal}</div>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              {utility.utility_notes && (
+                <div className="text-xs text-[#000000] bg-[#F5F7F9] rounded-lg px-3 py-2 whitespace-pre-wrap mt-2">{utility.utility_notes}</div>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* ── Finance ── */}
+        <div>
+          <div className="text-[10px] font-semibold text-[#6B7280] uppercase tracking-wider mb-2">Finance</div>
+          {extraLoading ? (
+            <div className="text-xs text-[#6B7280]">Loading...</div>
+          ) : !finance ? (
+            <div className="text-xs text-[#9CA3AF]">No finance data</div>
+          ) : (
+            <>
+              <div className="mb-2">{financeTypeBadge(finance.finance_type)}</div>
+              <div className="grid grid-cols-2 gap-2">
+                <InfoCell label="Finance Company" value={finance.finance_company ?? ""} />
+                <InfoCell label="Status" value={finance.finance_status ?? ""} />
+                <InfoCell label="Approval Date" value={fmtDate(finance.approval_date)} />
+                <InfoCell label="Funded Date" value={fmtDate(finance.funded_date)} />
+              </div>
+              {finance.finance_notes && (
+                <div className="text-xs text-[#000000] bg-[#F5F7F9] rounded-lg px-3 py-2 whitespace-pre-wrap mt-2">{finance.finance_notes}</div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Footer */}
+      <div className="px-4 py-3 border-t border-[#EBEFF3]">
+        <button className={`${UI.buttonPrimary} w-full text-center`} onClick={() => onOpenEdit(deal)}>Open Full Edit</button>
       </div>
     </div>
   );
@@ -265,6 +996,15 @@ export default function Sales() {
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState<string | null>(null);
 
+  /* View mode */
+  const [viewMode, setViewMode] = useState<"kanban" | "list">("kanban");
+
+  /* Inactive toggle, Paid toggle & Summary panel */
+  const [showInactive, setShowInactive] = useState(true);
+  const [showPaid, setShowPaid] = useState(true);
+  const [summaryDeal, setSummaryDeal] = useState<DealRow | null>(null);
+  const summaryPanelRef = useRef<HTMLDivElement>(null);
+
   /* Filters */
   const [salesReps, setSalesReps] = useState<string[]>([]);
   const [ccSetters, setCcSetters] = useState<string[]>([]);
@@ -275,7 +1015,7 @@ export default function Sales() {
   const [endDate, setEndDate] = useState("");
 
   /* Collapsible column groups — default: main 3 collapsed, NRG Adders visible */
-  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set(["nrg_adders"]));
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set(["nrg_adders", "cust_contact", "address"]));
   function toggleGroup(groupId: string) {
     setExpandedGroups(prev => {
       const next = new Set(prev);
@@ -310,11 +1050,19 @@ export default function Sales() {
   const [isNew, setIsNew] = useState(false);
   const [editTab, setEditTab] = useState<0 | 1 | 2>(0);
 
+  /* Drag-and-drop */
+  const [activeDragDeal, setActiveDragDeal] = useState<DealRow | null>(null);
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
+  );
+
   /* Debounce ref */
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  /* Row click timer (for list view single/double click discrimination) */
+  const rowClickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const load = useCallback(async () => {
-    // If scope resolves to empty list, short-circuit — user sees nothing
     if (teamNames !== null && teamNames.length === 0) {
       setRows([]); setLoading(false); return;
     }
@@ -322,11 +1070,9 @@ export default function Sales() {
     let q = supabase.from("deals_view").select(SELECT_COLUMNS).order("date_closed", { ascending: false }).limit(5000);
     if (startDate) q = q.gte("date_closed", startDate);
     if (endDate) q = q.lte("date_closed", endDate);
-    // Apply role-based scope filter (teamNames=null means "all", no filter)
     if (teamNames !== null && !salesReps.length) {
       q = q.in("sales_rep", teamNames);
     } else if (salesReps.length) {
-      // If user picked specific reps AND we have a scope, intersect
       if (teamNames !== null) {
         const allowed = salesReps.filter(r => teamNames.includes(r));
         q = q.in("sales_rep", allowed.length ? allowed : ["__none__"]);
@@ -351,7 +1097,19 @@ export default function Sales() {
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [load]);
 
-  /* Options from loaded rows — sales rep dropdown is scoped to allowed names */
+  /* Click outside to close summary panel */
+  useEffect(() => {
+    if (!summaryDeal) return;
+    const handler = (e: MouseEvent) => {
+      if (summaryPanelRef.current && !summaryPanelRef.current.contains(e.target as Node)) {
+        setSummaryDeal(null);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [summaryDeal]);
+
+  /* Options from loaded rows */
   const options = useMemo(() => {
     const allReps = uniqSorted(rows.map(r => r.sales_rep));
     return {
@@ -365,9 +1123,15 @@ export default function Sales() {
   /* Sorting */
   const sortedRows = useMemo(() => {
     if (sortKey === null) return rows;
-
-    /* Computed: sort by milestone completion count */
-    /* Sort by progress or milestones — both use milestone completion count */
+    if (sortKey === "__stage") {
+      const dir = sortDir === "asc" ? 1 : -1;
+      return [...rows].sort((a, b) => {
+        const as = getDealStage(a); const bs = getDealStage(b);
+        const ai = PIPELINE_STAGES.findIndex(s => s.key === as);
+        const bi = PIPELINE_STAGES.findIndex(s => s.key === bs);
+        return (ai - bi) * dir;
+      });
+    }
     if (sortKey === "__progress" || sortKey === "__milestones") {
       const dir = sortDir === "asc" ? 1 : -1;
       return [...rows].sort((a, b) => {
@@ -376,7 +1140,6 @@ export default function Sales() {
         return (ac - bc) * dir;
       });
     }
-
     const col = ALL_COLUMNS.find(c => c.key === sortKey);
     if (!col) return rows;
     const key = col.key as keyof DealRow;
@@ -391,10 +1154,165 @@ export default function Sales() {
     });
   }, [rows, sortKey, sortDir]);
 
+  /* Visible active stages (respects showPaid toggle) */
+  const visibleActiveStages = useMemo(() => {
+    if (showPaid) return ACTIVE_STAGES;
+    return ACTIVE_STAGES.filter(s => s.key !== "paid");
+  }, [showPaid]);
+
+  /* Filtered display rows for list view (respects showInactive + showPaid) */
+  const displayRows = useMemo(() => {
+    let out = sortedRows;
+    if (!showInactive) out = out.filter(r => !INACTIVE_STAGE_KEYS.has(getDealStage(r)));
+    if (!showPaid) out = out.filter(r => getDealStage(r) !== "paid");
+    return out;
+  }, [sortedRows, showInactive, showPaid]);
+
+  /* Deal count respecting both toggles */
+  const visibleDealCount = useMemo(() => {
+    let count = 0;
+    for (const r of rows) {
+      const s = getDealStage(r);
+      if (!showInactive && INACTIVE_STAGE_KEYS.has(s)) continue;
+      if (!showPaid && s === "paid") continue;
+      count++;
+    }
+    return count;
+  }, [rows, showInactive, showPaid]);
+
+  /* List-view summary stats (per-stage counts, totals, trajectory, milestones) */
+  const listSummary = useMemo(() => {
+    const now = Date.now();
+    const d30 = 30 * 86_400_000;
+    const stageStats: StageStat[] = [];
+    const allStages = showInactive ? PIPELINE_STAGES : PIPELINE_STAGES.filter(s => !s.inactive);
+    const filtered = showPaid ? allStages : allStages.filter(s => s.key !== "paid");
+
+    /* Per-milestone aggregate counts across all visible deals */
+    const milestoneAgg: { key: string; short: string; done: number; total: number }[] =
+      MILESTONES.map(m => ({ key: m.key, short: m.short, done: 0, total: 0 }));
+
+    for (const stage of filtered) {
+      let count = 0, value = 0, recent = 0, prior = 0, milestoneTotal = 0, milestoneDone = 0;
+      for (const r of displayRows) {
+        if (getDealStage(r) !== stage.key) continue;
+        count++;
+        value += r.contract_value ?? 0;
+        milestoneTotal += MILESTONES.length;
+        for (let mi = 0; mi < MILESTONES.length; mi++) {
+          milestoneAgg[mi].total++;
+          if (r[MILESTONES[mi].key]) { milestoneDone++; milestoneAgg[mi].done++; }
+        }
+        if (r.date_closed) {
+          const closed = new Date(r.date_closed + "T00:00:00").getTime();
+          if (now - closed <= d30) recent++;
+          else if (now - closed <= d30 * 2) prior++;
+        }
+      }
+      stageStats.push({ stage, count, value, recent, prior, milestoneTotal, milestoneDone });
+    }
+
+    const totals = stageStats.reduce(
+      (acc, s) => ({ count: acc.count + s.count, value: acc.value + s.value, recent: acc.recent + s.recent, prior: acc.prior + s.prior, milestoneTotal: acc.milestoneTotal + s.milestoneTotal, milestoneDone: acc.milestoneDone + s.milestoneDone }),
+      { count: 0, value: 0, recent: 0, prior: 0, milestoneTotal: 0, milestoneDone: 0 }
+    );
+
+    return { stageStats, totals, milestoneAgg };
+  }, [displayRows, showInactive, showPaid]);
+
+  /* Deals grouped by pipeline stage (for Kanban) */
+  const dealsByStage = useMemo(() => {
+    const map = new Map<string, DealRow[]>();
+    for (const stage of PIPELINE_STAGES) map.set(stage.key, []);
+    for (const deal of sortedRows) {
+      const stageKey = getDealStage(deal);
+      const arr = map.get(stageKey);
+      if (arr) arr.push(deal);
+    }
+    return map;
+  }, [sortedRows]);
+
+  /* Drag handlers */
+  function handleDragStart(event: DragStartEvent) {
+    const deal = (event.active.data.current as Record<string, unknown>)?.deal as DealRow | undefined;
+    setActiveDragDeal(deal ?? null);
+  }
+
+  async function handleDragEnd(event: DragEndEvent) {
+    setActiveDragDeal(null);
+    const { active, over } = event;
+    if (!over) return;
+
+    const deal = (active.data.current as Record<string, unknown>)?.deal as DealRow | undefined;
+    if (!deal) return;
+
+    const targetStageKey = over.id as string;
+    const currentStageKey = getDealStage(deal);
+    if (targetStageKey === currentStageKey) return;
+
+    /* Block drag to/from inactive stages */
+    if (INACTIVE_STAGE_KEYS.has(targetStageKey) || INACTIVE_STAGE_KEYS.has(currentStageKey)) return;
+
+    const targetIdx = ACTIVE_STAGES.findIndex(s => s.key === targetStageKey);
+    const currentIdx = ACTIVE_STAGES.findIndex(s => s.key === currentStageKey);
+    if (targetIdx < 0) return;
+
+    const today = new Date().toISOString().slice(0, 10);
+    const targetEnd = STAGE_MILESTONE_END[targetIdx];
+
+    const payload: Record<string, string | null> = {};
+
+    if (targetIdx > currentIdx) {
+      // Moving forward: set missing intermediate milestone dates to today
+      for (let i = 0; i <= targetEnd; i++) {
+        const mKey = MILESTONES[i].key as string;
+        if (!deal[MILESTONES[i].key]) {
+          payload[mKey] = today;
+        }
+      }
+    } else {
+      // Moving backward: clear milestone dates after the target stage
+      for (let i = targetEnd + 1; i < MILESTONES.length; i++) {
+        const mKey = MILESTONES[i].key as string;
+        if (deal[MILESTONES[i].key]) {
+          payload[mKey] = null;
+        }
+      }
+    }
+
+    if (Object.keys(payload).length === 0) return;
+
+    // Optimistic update
+    setRows(prev => prev.map(r => {
+      if (r.id !== deal.id) return r;
+      const updated = { ...r };
+      for (const [k, v] of Object.entries(payload)) {
+        (updated as Record<string, unknown>)[k] = v;
+      }
+      return updated as DealRow;
+    }));
+
+    // Persist to Supabase
+    const { error } = await supabase.from("deals").update(payload).eq("id", deal.id).select("id");
+    if (error) {
+      console.error("Failed to update milestones:", error);
+      load(); // reload on error to restore correct state
+    }
+  }
+
   /* Edit dialog helpers */
+  function autoSaleType(draft: Record<string, any>) {
+    if (!draft.sale_type) {
+      const ccLead = ((draft.call_center_lead as string) ?? "").trim().toLowerCase();
+      draft.sale_type = ccLead === "yes" ? "Call Center Deal" : "D2D";
+    }
+  }
+
   function openEdit(row: DealRow) {
     setEditRow(row);
-    setEditDraft({ ...row });
+    const draft = { ...row } as Record<string, any>;
+    autoSaleType(draft);
+    setEditDraft(draft);
     setEditMsg(null);
     setIsNew(false);
     setEditTab(0);
@@ -403,6 +1321,7 @@ export default function Sales() {
   function openNew() {
     const blank: Record<string, any> = { id: "" };
     for (const col of EDIT_COLUMNS) blank[col.key] = null;
+    autoSaleType(blank);
     setEditRow(blank as DealRow);
     setEditDraft(blank);
     setEditMsg(null);
@@ -419,7 +1338,6 @@ export default function Sales() {
     setSaving(true); setEditMsg(null);
 
     if (isNew) {
-      /* ── INSERT new deal ── */
       const payload: Record<string, any> = {};
       for (const col of EDIT_COLUMNS) {
         const k = col.key as keyof DealRow;
@@ -433,13 +1351,11 @@ export default function Sales() {
       if (error) { setEditMsg(`Error: ${error.message}`); setSaving(false); return; }
       if (!inserted || inserted.length === 0) { setEditMsg("Insert failed — check database permissions."); setSaving(false); return; }
     } else {
-      /* ── UPDATE existing deal ── */
       const payload: Record<string, any> = {};
       for (const col of EDIT_COLUMNS) {
         const k = col.key as keyof DealRow;
         const rawNew = editDraft[k];
         const rawOld = editRow[k];
-        /* Normalize both sides so "7.5" vs 7.5 doesn't trigger a false diff */
         const norm = (v: unknown) => (v == null || v === "" ? null : (col.type === "money" || col.type === "num") ? Number(v) : String(v));
         const nNew = norm(rawNew);
         const nOld = norm(rawOld);
@@ -460,50 +1376,90 @@ export default function Sales() {
   const containerStyle: React.CSSProperties = { height: `calc(100dvh - ${PORTAL_HEADER_PX}px)`, maxHeight: `calc(100dvh - ${PORTAL_HEADER_PX}px)` };
 
   return (
-    <div className="min-h-0 flex flex-col overflow-hidden bg-white p-4" style={containerStyle}>
-      <div className="flex-1 min-h-0 flex flex-col bg-white rounded-xl border border-slate-200/60 shadow-sm overflow-hidden">
+    <div className="min-h-0 flex flex-col overflow-hidden bg-[#F5F7F9] p-4" style={containerStyle}>
+      <div className="flex-1 min-h-0 flex flex-col bg-white rounded-xl border border-[#EBEFF3] shadow-sm overflow-hidden">
       {/* Sticky top: filters */}
-      <div className="sticky top-0 z-30 bg-white/95 backdrop-blur border-b border-slate-200/60">
+      <div className="sticky top-0 z-30 bg-white/95 backdrop-blur border-b border-[#EBEFF3]">
         <div className="p-4 space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-emerald-500 to-emerald-700 flex items-center justify-center shadow-sm">
+              <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-[#1c48a6] to-[#7096e6] flex items-center justify-center shadow-sm">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <line x1="12" y1="1" x2="12" y2="23" /><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
                 </svg>
               </div>
               <div>
-                <h2 className="text-base font-bold text-slate-800 tracking-tight">Sales</h2>
-                <p className="text-xs text-slate-400">Click any row to edit · Filters auto-apply as you type</p>
+                <h2 className="text-base font-bold text-[#000000] tracking-tight">Sales</h2>
+                <p className="text-xs text-[#6B7280]">Click to preview · Double-click to edit</p>
               </div>
             </div>
             <div className="flex gap-2 items-center">
+              {/* View Toggle */}
+              <div className="flex rounded-lg border border-[#EBEFF3] overflow-hidden">
+                <button
+                  type="button"
+                  className={`px-3 py-1.5 text-xs font-semibold transition-colors ${viewMode === "kanban" ? "bg-[#1c48a6] text-white" : "bg-white text-[#6B7280] hover:bg-[#F5F7F9]"}`}
+                  onClick={() => setViewMode("kanban")}
+                >
+                  Board
+                </button>
+                <button
+                  type="button"
+                  className={`px-3 py-1.5 text-xs font-semibold transition-colors ${viewMode === "list" ? "bg-[#1c48a6] text-white" : "bg-white text-[#6B7280] hover:bg-[#F5F7F9]"}`}
+                  onClick={() => setViewMode("list")}
+                >
+                  List
+                </button>
+              </div>
               {!scopeLoading && effectiveScope !== "all" && (
                 <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-semibold border ${
                   effectiveScope === "team" ? "border-purple-200 bg-purple-50 text-purple-700" :
                   effectiveScope === "own" ? "border-blue-200 bg-blue-50 text-blue-700" :
-                  "border-slate-200 bg-slate-50 text-slate-500"
+                  "border-[#EBEFF3] bg-[#F5F7F9] text-[#6B7280]"
                 }`}>
                   {effectiveScope === "team" ? "Showing: Your team's deals" :
                    effectiveScope === "own" ? "Showing: Your deals only" :
                    "Showing: No access"}
                 </span>
               )}
-              <span className={UI.pill}>{loading ? "Loading..." : `${rows.length} deals`}</span>
+              <span className={UI.pill}>{loading ? "Loading..." : `${visibleDealCount} deals`}</span>
               <button className={UI.buttonGhost} onClick={load}>Refresh</button>
               <button className={UI.buttonGhost} onClick={clearAll}>Clear Filters</button>
-              {/* NRG Customer Adders toggle */}
               <button
                 className={`px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border transition ${
-                  expandedGroups.has("nrg_adders")
-                    ? "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
-                    : "border-slate-200 bg-slate-50 text-slate-400 hover:bg-slate-100"
+                  showInactive
+                    ? "border-[#1c48a6]/30 bg-[#1c48a6]/5 text-[#1c48a6] hover:bg-[#1c48a6]/10"
+                    : "border-[#EBEFF3] bg-[#F5F7F9] text-[#6B7280] hover:bg-white"
                 }`}
-                onClick={() => toggleGroup("nrg_adders")}
-                title={expandedGroups.has("nrg_adders") ? "Hide NRG Customer Adders column" : "Show NRG Customer Adders column"}
+                onClick={() => setShowInactive(v => !v)}
+                title={showInactive ? "Hide inactive deal columns" : "Show inactive deal columns"}
               >
-                NRG Adders {expandedGroups.has("nrg_adders") ? "ON" : "OFF"}
+                Inactive {showInactive ? "ON" : "OFF"}
               </button>
+              <button
+                className={`px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border transition ${
+                  showPaid
+                    ? "border-[#10B981]/30 bg-[#10B981]/5 text-[#10B981] hover:bg-[#10B981]/10"
+                    : "border-[#EBEFF3] bg-[#F5F7F9] text-[#6B7280] hover:bg-white"
+                }`}
+                onClick={() => setShowPaid(v => !v)}
+                title={showPaid ? "Hide Paid column" : "Show Paid column"}
+              >
+                Paid {showPaid ? "ON" : "OFF"}
+              </button>
+              {viewMode === "list" && (
+                <button
+                  className={`px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border transition ${
+                    expandedGroups.has("nrg_adders")
+                      ? "border-[#1c48a6]/30 bg-[#1c48a6]/5 text-[#1c48a6] hover:bg-[#1c48a6]/10"
+                      : "border-[#EBEFF3] bg-[#F5F7F9] text-[#6B7280] hover:bg-white"
+                  }`}
+                  onClick={() => toggleGroup("nrg_adders")}
+                  title={expandedGroups.has("nrg_adders") ? "Hide NRG Customer Adders column" : "Show NRG Customer Adders column"}
+                >
+                  NRG Adders {expandedGroups.has("nrg_adders") ? "ON" : "OFF"}
+                </button>
+              )}
               <button className={UI.buttonPrimary} onClick={openNew}>+ Add Deal</button>
             </div>
           </div>
@@ -513,7 +1469,7 @@ export default function Sales() {
           <div className={`${UI.card} p-3`}>
             <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-3">
               <div>
-                <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Customer Name</div>
+                <div className="text-[10px] font-semibold text-[#6B7280] uppercase tracking-wider mb-1">Customer Name</div>
                 <input className={UI.control} value={customerQ} onChange={e => setCustomerQ(e.target.value)} placeholder="Search..." />
               </div>
               <MultiSelect label="Sales Rep" options={options.salesReps} selected={salesReps} onChange={setSalesReps} />
@@ -521,11 +1477,11 @@ export default function Sales() {
               <MultiSelect label="Installer" options={options.installers} selected={installers} onChange={setInstallers} />
               <MultiSelect label="Status" options={options.statuses} selected={statuses} onChange={setStatuses} />
               <div>
-                <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Start Date</div>
+                <div className="text-[10px] font-semibold text-[#6B7280] uppercase tracking-wider mb-1">Start Date</div>
                 <input type="date" className={UI.control} value={startDate} onChange={e => setStartDate(e.target.value)} />
               </div>
               <div>
-                <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">End Date</div>
+                <div className="text-[10px] font-semibold text-[#6B7280] uppercase tracking-wider mb-1">End Date</div>
                 <input type="date" className={UI.control} value={endDate} onChange={e => setEndDate(e.target.value)} />
               </div>
             </div>
@@ -533,92 +1489,170 @@ export default function Sales() {
         </div>
       </div>
 
-      {/* Table */}
-      <div className="flex-1 min-h-0">
-        <div className="h-full overflow-auto">
-          <table className="w-full text-xs" style={{ minWidth: `${visibleColumns.length * 120}px` }}>
-            <thead className="sticky top-0 z-10 bg-white/95 backdrop-blur border-b border-slate-200/60">
-              <tr className="text-left text-slate-700">
-                {visibleColumns.map((col, i) => (
-                  <th key={col.key}
-                    className={`px-2.5 py-2 whitespace-nowrap border-r border-slate-200/60 font-semibold select-none hover:bg-slate-100/80 transition-colors ${i === visibleColumns.length - 1 ? "border-r-0" : ""} ${col.type === "money" || col.type === "num" ? "text-right" : ""} ${col.group ? "bg-blue-50/40" : ""}`}
-                  >
-                    <span className="inline-flex items-center gap-1">
-                      {/* Group toggle chevron */}
-                      {col.groupParent && (
-                        <button
-                          type="button"
-                          className="text-[10px] text-slate-400 hover:text-slate-700 transition-colors px-0.5"
-                          onClick={(e) => { e.stopPropagation(); toggleGroup(col.groupParent!); }}
-                          title={expandedGroups.has(col.groupParent!) ? "Collapse sub-columns" : "Expand sub-columns"}
-                        >
-                          {expandedGroups.has(col.groupParent!) ? "▾" : "▸"}
-                        </button>
-                      )}
-                      <span className="cursor-pointer" onClick={() => handleSort(col)}>{col.label}</span>
-                      {/* Sort indicator */}
-                      <span className="cursor-pointer" onClick={() => handleSort(col)}>
-                        {sortKey === col.key
-                          ? <span className="text-[10px]">{sortDir === "asc" ? "▲" : "▼"}</span>
-                          : <span className="text-[10px] text-slate-300">⇅</span>}
-                      </span>
-                    </span>
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
+      {/* Content: Kanban Board or Table */}
+      {viewMode === "kanban" ? (
+        <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+          <div className="flex-1 min-h-0 flex">
+            <div className="flex-1 min-h-0 overflow-x-auto">
               {loading ? (
-                <tr><td className="px-3 py-8 text-slate-400 text-center" colSpan={visibleColumns.length}>Loading deals...</td></tr>
-              ) : sortedRows.length === 0 ? (
-                <tr><td className="px-3 py-8 text-slate-400 text-center" colSpan={visibleColumns.length}>No results.</td></tr>
+                <div className="flex items-center justify-center h-full text-[#6B7280] text-sm">Loading deals...</div>
               ) : (
-                sortedRows.map(r => {
-                  const prog = getProgress(r);
-                  return (
-                  <tr key={r.id} onClick={() => openEdit(r)} className="border-b border-slate-200/40 hover:bg-indigo-50/40 cursor-pointer transition-colors">
-                    {visibleColumns.map(col => {
-                      /* Progress bar cell */
-                      if (col.key === "__progress") return (
-                        <td key={col.key} className="px-2.5 py-2 border-r border-slate-200/40 text-center">
-                          <div className="flex items-center justify-center gap-1.5">
-                            <div className="w-12 h-1.5 rounded-full bg-slate-200 overflow-hidden">
-                              <div className={`h-full rounded-full ${progressBg(prog.pct)} transition-all`} style={{ width: `${prog.pct}%` }} />
-                            </div>
-                            <span className={`text-[10px] font-bold tabular-nums ${progressColor(prog.pct)}`}>{prog.pct}%</span>
-                          </div>
-                        </td>
-                      );
-                      /* Milestone dots cell */
-                      if (col.key === "__milestones") return (
-                        <td key={col.key} className="px-2.5 py-2 border-r border-slate-200/40">
-                          <div className="flex items-center justify-center gap-1">
-                            {MILESTONES.map(m => (
-                              <div key={m.key} title={`${m.short}: ${r[m.key] ? fmtDate(r[m.key] as string) : "Pending"}`}
-                                className={`w-2 h-2 rounded-full transition-colors ${r[m.key] ? "bg-emerald-500" : "bg-slate-200"}`} />
-                            ))}
-                          </div>
-                        </td>
-                      );
-                      /* Standard cell */
-                      return (
-                        <td key={col.key} className={`px-2.5 py-2 whitespace-nowrap border-r border-slate-200/40 ${col.type === "money" || col.type === "num" ? "text-right tabular-nums" : ""} ${col.group ? "bg-blue-50/20" : ""}`}>
-                          {cellVal(r, col)}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                  );
-                })
+                <div className="flex h-full divide-x divide-[#EBEFF3]">
+                  {/* Active stages */}
+                  {visibleActiveStages.map(stage => (
+                    <StageColumn
+                      key={stage.key}
+                      stage={stage}
+                      deals={dealsByStage.get(stage.key) ?? []}
+                      onCardClick={(d) => setSummaryDeal(d)}
+                      onCardDoubleClick={openEdit}
+                    />
+                  ))}
+                  {/* Divider between active and inactive */}
+                  {showInactive && (
+                    <>
+                      <div className="flex-shrink-0" style={{ width: 8, minWidth: 8, backgroundColor: "#EBEFF3" }} />
+                      {/* Inactive stages */}
+                      {INACTIVE_STAGES.map(stage => (
+                        <StageColumn
+                          key={stage.key}
+                          stage={stage}
+                          deals={dealsByStage.get(stage.key) ?? []}
+                          onCardClick={(d) => setSummaryDeal(d)}
+                          onCardDoubleClick={openEdit}
+                          inactive
+                        />
+                      ))}
+                    </>
+                  )}
+                </div>
               )}
-            </tbody>
-          </table>
+            </div>
+            {/* Summary Panel (kanban) */}
+            {summaryDeal && (
+              <DealSummaryPanel deal={summaryDeal} onClose={() => setSummaryDeal(null)} onOpenEdit={(d) => { setSummaryDeal(null); openEdit(d); }} panelRef={summaryPanelRef} />
+            )}
+          </div>
+          <DragOverlay dropAnimation={null}>
+            {activeDragDeal ? <DealCardOverlay deal={activeDragDeal} /> : null}
+          </DragOverlay>
+        </DndContext>
+      ) : (
+        <div className="flex-1 min-h-0 flex flex-col">
+          {/* List Summary Bar */}
+          {!loading && displayRows.length > 0 && (
+            <ListSummaryBar stageStats={listSummary.stageStats} totals={listSummary.totals} milestoneAgg={listSummary.milestoneAgg} />
+          )}
+          <div className="flex-1 min-h-0 flex">
+          <div className="flex-1 min-h-0 overflow-auto">
+            <table className="w-full text-xs" style={{ minWidth: `${visibleColumns.length * 120}px` }}>
+              <thead className="sticky top-0 z-10 bg-[#F5F7F9] border-b border-[#EBEFF3]">
+                <tr className="text-left text-[#000000]">
+                  {visibleColumns.map((col, i) => (
+                    <th key={col.key}
+                      className={`px-2.5 py-2 whitespace-nowrap border-r border-[#EBEFF3] font-semibold select-none hover:bg-[#EBEFF3] transition-colors ${i === visibleColumns.length - 1 ? "border-r-0" : ""} ${col.type === "money" || col.type === "num" ? "text-right" : ""} ${col.group ? "bg-[#1c48a6]/5" : ""}`}
+                    >
+                      <span className="inline-flex items-center gap-1">
+                        {col.groupParent && (
+                          <button
+                            type="button"
+                            className="text-[10px] text-[#6B7280] hover:text-[#000000] transition-colors px-0.5"
+                            onClick={(e) => { e.stopPropagation(); toggleGroup(col.groupParent!); }}
+                            title={expandedGroups.has(col.groupParent!) ? "Collapse sub-columns" : "Expand sub-columns"}
+                          >
+                            {expandedGroups.has(col.groupParent!) ? "&#9662;" : "&#9656;"}
+                          </button>
+                        )}
+                        <span className="cursor-pointer" onClick={() => handleSort(col)}>{col.label}</span>
+                        <span className="cursor-pointer" onClick={() => handleSort(col)}>
+                          {sortKey === col.key
+                            ? <span className="text-[10px]">{sortDir === "asc" ? "\u25B2" : "\u25BC"}</span>
+                            : <span className="text-[10px] text-[#EBEFF3]">{"\u21C5"}</span>}
+                        </span>
+                      </span>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {loading ? (
+                  <tr><td className="px-3 py-8 text-[#6B7280] text-center" colSpan={visibleColumns.length}>Loading deals...</td></tr>
+                ) : displayRows.length === 0 ? (
+                  <tr><td className="px-3 py-8 text-[#6B7280] text-center" colSpan={visibleColumns.length}>No results.</td></tr>
+                ) : (
+                  displayRows.map(r => {
+                    const prog = getProgress(r);
+                    const rowStageKey = getDealStage(r);
+                    const rowStage = PIPELINE_STAGES.find(s => s.key === rowStageKey) ?? PIPELINE_STAGES[0];
+                    return (
+                    <tr key={r.id}
+                      onClick={() => {
+                        if (rowClickTimer.current) { clearTimeout(rowClickTimer.current); rowClickTimer.current = null; openEdit(r); return; }
+                        rowClickTimer.current = setTimeout(() => { rowClickTimer.current = null; setSummaryDeal(r); }, 250);
+                      }}
+                      className="border-b border-[#EBEFF3] hover:bg-[#1c48a6]/5 cursor-pointer transition-colors"
+                    >
+                      {visibleColumns.map(col => {
+                        /* Stage badge cell */
+                        if (col.key === "__stage") return (
+                          <td key={col.key} className="px-2.5 py-2 border-r border-[#EBEFF3]">
+                            <span
+                              className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold"
+                              style={{ backgroundColor: rowStage.bg, color: rowStage.dot, border: `1px solid ${rowStage.dot}30` }}
+                            >
+                              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: rowStage.dot }} />
+                              {rowStage.label}
+                            </span>
+                          </td>
+                        );
+                        /* Progress bar cell */
+                        if (col.key === "__progress") return (
+                          <td key={col.key} className="px-2.5 py-2 border-r border-[#EBEFF3] text-center">
+                            <div className="flex items-center justify-center gap-1.5">
+                              <div className="w-12 h-1.5 rounded-full bg-[#EBEFF3] overflow-hidden">
+                                <div className={`h-full rounded-full ${progressBg(prog.pct)} transition-all`} style={{ width: `${prog.pct}%` }} />
+                              </div>
+                              <span className={`text-[10px] font-bold tabular-nums ${progressColor(prog.pct)}`}>{prog.pct}%</span>
+                            </div>
+                          </td>
+                        );
+                        /* Milestone dots cell */
+                        if (col.key === "__milestones") return (
+                          <td key={col.key} className="px-2.5 py-2 border-r border-[#EBEFF3]">
+                            <div className="flex items-center justify-center gap-1">
+                              {MILESTONES.map(m => (
+                                <div key={m.key} title={`${m.short}: ${r[m.key] ? fmtDate(r[m.key] as string) : "Pending"}`}
+                                  className="w-2 h-2 rounded-full transition-colors"
+                                  style={{ backgroundColor: r[m.key] ? "#1c48a6" : "#E5E7EB" }} />
+                              ))}
+                            </div>
+                          </td>
+                        );
+                        /* Standard cell */
+                        return (
+                          <td key={col.key} className={`px-2.5 py-2 whitespace-nowrap border-r border-[#EBEFF3] ${col.type === "money" || col.type === "num" ? "text-right tabular-nums" : ""} ${col.group ? "bg-[#1c48a6]/5" : ""}`}>
+                            {cellVal(r, col)}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+          {/* Summary Panel (list view) */}
+          {summaryDeal && (
+            <DealSummaryPanel deal={summaryDeal} onClose={() => setSummaryDeal(null)} onOpenEdit={(d) => { setSummaryDeal(null); openEdit(d); }} panelRef={summaryPanelRef} />
+          )}
         </div>
-      </div>
+        </div>
+      )}
 
       </div>{/* end rounded card wrapper */}
 
-      {/* Edit Dialog — Tabbed */}
+      {/* Edit Dialog */}
       {editRow && (
         <EditDialog
           isNew={isNew}
@@ -646,14 +1680,41 @@ export default function Sales() {
 
 const EDIT_TABS = ["Sales & Contract", "Finance", "Status & Stage"] as const;
 
-type EditFieldDef = { label: string; key: keyof DealRow; type: "text" | "money" | "num" | "date" };
+type EditFieldDef = { label: string; key: keyof DealRow; type: "text" | "money" | "num" | "date" | "select"; options?: string[] };
+
+/* ── Tab 0: Customer Details ── */
+const TAB0_CUSTOMER: EditFieldDef[] = [
+  { label: "First Name", key: "first_name",    type: "text" },
+  { label: "Last Name",  key: "last_name",     type: "text" },
+  { label: "Phone",      key: "phone_number",  type: "text" },
+  { label: "Email",      key: "email_address",  type: "text" },
+];
+const TAB0_ADDRESS: EditFieldDef[] = [
+  { label: "Street Address", key: "street_address", type: "text" },
+  { label: "City",           key: "city",            type: "text" },
+  { label: "State",          key: "state",           type: "text" },
+  { label: "Postal Code",    key: "postal_code",     type: "text" },
+  { label: "Country",        key: "country",          type: "text" },
+];
+const TAB0_SALE_TYPE: EditFieldDef[] = [
+  { label: "Sale Type", key: "sale_type", type: "select", options: ["Call Center Deal", "D2D", "Referral"] },
+];
+const TAB0_SYSTEM: EditFieldDef[] = [
+  { label: "Battery Job",      key: "battery_job",      type: "text" },
+  { label: "Type of Roof",     key: "type_of_roof",     type: "text" },
+  { label: "Panel Type",       key: "panel_type",        type: "text" },
+  { label: "Panel Amount",     key: "panel_amount",      type: "num" },
+  { label: "Roof Work Needed", key: "roof_work_needed",  type: "select", options: ["Yes", "No"] },
+];
+const TAB0_ROOF_PROGRESS: EditFieldDef[] = [
+  { label: "Roof Work Progress", key: "roof_work_progress", type: "text" },
+];
 
 /* ── Tab 0: Sales & Contract ── */
 const TAB0_SALES: EditFieldDef[] = [
   { label: "Date Closed",   key: "date_closed",   type: "date" },
   { label: "Customer Name", key: "customer_name",  type: "text" },
   { label: "Company",       key: "company",        type: "text" },
-  { label: "State",         key: "state",          type: "text" },
   { label: "Teams",         key: "teams",          type: "text" },
 ];
 const TAB0_REPS: EditFieldDef[] = [
@@ -732,6 +1793,18 @@ const TAB2_TOP: EditFieldDef[] = [
 const TAB2_STATUS: EditFieldDef[] = [
   { label: "Status", key: "status", type: "text" },
 ];
+const TAB2_PERMIT: EditFieldDef[] = [
+  { label: "AHJ Info",     key: "permit_ahj_info", type: "text" },
+  { label: "Permit Fees",  key: "permit_fees",      type: "money" },
+  { label: "Permit No.",   key: "permit_number",    type: "text" },
+];
+const TAB2_HOA_SELECT: EditFieldDef[] = [
+  { label: "HOA", key: "hoa", type: "select", options: ["Yes", "No"] },
+];
+const TAB2_HOA_DETAILS: EditFieldDef[] = [
+  { label: "HOA Name",            key: "hoa_name",             type: "text" },
+  { label: "HOA Forms Completed", key: "hoa_forms_completed",  type: "select", options: ["Yes", "Not Yet", "Processing"] },
+];
 const TAB2_MILESTONES: EditFieldDef[] = [
   { label: "Survey Date",        key: "site_survey_date_completed", type: "date" },
   { label: "Survey Status",      key: "site_survey_status",         type: "text" },
@@ -749,11 +1822,16 @@ const TAB2_PAID: EditFieldDef[] = [
 /* ── Reusable field input renderer ── */
 function FieldInput({ field, value, onChange }: { field: EditFieldDef; value: unknown; onChange: (key: string, val: string) => void }) {
   const displayVal = value == null ? "" : String(value);
-  const cls = "w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-300";
+  const cls = "w-full border border-[#EBEFF3] rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-[#7096e6]/40";
   return (
     <div>
-      <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block mb-0.5">{field.label}</label>
-      {field.type === "date" ? (
+      <label className="text-[10px] font-semibold text-[#6B7280] uppercase tracking-wider block mb-0.5">{field.label}</label>
+      {field.type === "select" && field.options ? (
+        <select className={cls} value={displayVal} onChange={e => onChange(field.key, e.target.value)}>
+          <option value="">— Select —</option>
+          {field.options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+        </select>
+      ) : field.type === "date" ? (
         <input type="date" className={cls} value={displayVal ? displayVal.slice(0, 10) : ""} onChange={e => onChange(field.key, e.target.value)} />
       ) : field.type === "money" || field.type === "num" ? (
         <input type="number" step="any" className={`${cls} text-right`} value={displayVal} onChange={e => onChange(field.key, e.target.value)} />
@@ -766,7 +1844,7 @@ function FieldInput({ field, value, onChange }: { field: EditFieldDef; value: un
 
 /* ── Section header ── */
 function SectionLabel({ children }: { children: React.ReactNode }) {
-  return <div className="col-span-full text-[11px] font-bold text-slate-700 uppercase tracking-wider border-b border-slate-200/60 pb-1 mt-2">{children}</div>;
+  return <div className="col-span-full text-[11px] font-bold text-[#000000] uppercase tracking-wider border-b border-[#EBEFF3] pb-1 mt-2">{children}</div>;
 }
 
 /* ── Tabbed edit dialog ── */
@@ -789,29 +1867,29 @@ function EditDialog({ isNew, editRow, editDraft, editMsg, saving, editTab, setEd
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl mx-4 max-h-[85vh] flex flex-col" onClick={ev => ev.stopPropagation()}>
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 flex-shrink-0">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[#EBEFF3] flex-shrink-0">
           <div>
-            <div className="text-sm font-semibold text-slate-800">{isNew ? "New Deal" : "Edit Deal"}</div>
-            <div className="text-[10px] text-slate-400">{isNew ? "Fill in the fields below to create a new deal" : `${editDraft.customer_name ?? "Untitled"} · ${editDraft.sales_rep ?? "No rep"} · ID: ${editRow.id.slice(0, 8)}`}</div>
+            <div className="text-sm font-semibold text-[#000000]">{isNew ? "New Deal" : "Edit Deal"}</div>
+            <div className="text-[10px] text-[#6B7280]">{isNew ? "Fill in the fields below to create a new deal" : `${editDraft.customer_name ?? "Untitled"} \u00B7 ${editDraft.sales_rep ?? "No rep"} \u00B7 ID: ${editRow.id.slice(0, 8)}`}</div>
           </div>
-          <button className="text-slate-400 hover:text-slate-600 text-lg" onClick={onClose}>✕</button>
+          <button className="text-[#6B7280] hover:text-[#000000] text-lg" onClick={onClose}>{"\u2715"}</button>
         </div>
 
         {/* Tab bar */}
-        <div className="flex border-b border-slate-200 px-5 flex-shrink-0">
+        <div className="flex border-b border-[#EBEFF3] px-5 flex-shrink-0">
           {EDIT_TABS.map((label, i) => (
             <button
               key={label}
               type="button"
               className={`px-4 py-2.5 text-xs font-semibold transition-colors relative ${
                 editTab === i
-                  ? "text-slate-900"
-                  : "text-slate-400 hover:text-slate-600"
+                  ? "text-[#000000]"
+                  : "text-[#6B7280] hover:text-[#000000]"
               }`}
               onClick={() => setEditTab(i as 0 | 1 | 2)}
             >
               {label}
-              {editTab === i && <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-slate-900 rounded-full" />}
+              {editTab === i && <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#1c48a6] rounded-full" />}
             </button>
           ))}
         </div>
@@ -820,11 +1898,22 @@ function EditDialog({ isNew, editRow, editDraft, editMsg, saving, editTab, setEd
         <div className="overflow-y-auto flex-1 px-5 py-4">
           {editTab === 0 && (
             <div className="space-y-1">
+              <SectionLabel>Customer Info</SectionLabel>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-3">{renderFields(TAB0_CUSTOMER)}</div>
+              <SectionLabel>Address</SectionLabel>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-3">{renderFields(TAB0_ADDRESS)}</div>
+              <SectionLabel>Sale Type</SectionLabel>
+              <div className="grid grid-cols-3 gap-x-4 gap-y-3">{renderFields(TAB0_SALE_TYPE)}</div>
               <SectionLabel>Sales Info</SectionLabel>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-3">{renderFields(TAB0_SALES)}</div>
               <div className="grid grid-cols-3 gap-x-4 gap-y-3 mt-3">{renderFields(TAB0_REPS)}</div>
               <SectionLabel>Contract Info</SectionLabel>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-3">{renderFields(TAB0_CONTRACT)}</div>
+              <SectionLabel>System Details</SectionLabel>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-3">{renderFields(TAB0_SYSTEM)}</div>
+              {editDraft.roof_work_needed === "Yes" && (
+                <div className="grid grid-cols-3 gap-x-4 gap-y-3 mt-2">{renderFields(TAB0_ROOF_PROGRESS)}</div>
+              )}
             </div>
           )}
 
@@ -859,6 +1948,15 @@ function EditDialog({ isNew, editRow, editDraft, editMsg, saving, editTab, setEd
               <SectionLabel>Status</SectionLabel>
               <div className="grid grid-cols-3 gap-x-4 gap-y-3">{renderFields(TAB2_STATUS)}</div>
 
+              <SectionLabel>Permit Details</SectionLabel>
+              <div className="grid grid-cols-3 gap-x-4 gap-y-3">{renderFields(TAB2_PERMIT)}</div>
+
+              <SectionLabel>HOA</SectionLabel>
+              <div className="grid grid-cols-3 gap-x-4 gap-y-3">{renderFields(TAB2_HOA_SELECT)}</div>
+              {editDraft.hoa === "Yes" && (
+                <div className="grid grid-cols-2 gap-x-4 gap-y-3 mt-2">{renderFields(TAB2_HOA_DETAILS)}</div>
+              )}
+
               <SectionLabel>Milestones</SectionLabel>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-3">{renderFields(TAB2_MILESTONES)}</div>
 
@@ -869,7 +1967,7 @@ function EditDialog({ isNew, editRow, editDraft, editMsg, saving, editTab, setEd
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between px-5 py-3 border-t border-slate-100 bg-slate-50 rounded-b-xl flex-shrink-0">
+        <div className="flex items-center justify-between px-5 py-3 border-t border-[#EBEFF3] bg-[#F5F7F9] rounded-b-xl flex-shrink-0">
           {editMsg && <div className="text-xs text-amber-600">{editMsg}</div>}
           {!editMsg && <div />}
           <div className="flex gap-2">
