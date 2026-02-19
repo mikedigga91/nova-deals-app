@@ -142,6 +142,8 @@ type PipelineStage = {
 };
 
 const PIPELINE_STAGES: PipelineStage[] = [
+  /* On-Hold first so reps see it immediately */
+  { key: "on_hold",          label: "On-Hold",          milestoneKey: null,                          dot: "#F59E0B", bg: "#FEF3C7" },
   { key: "new",              label: "New",              milestoneKey: null,                          dot: "#9CA3AF", bg: "#F3F4F6" },
   { key: "survey",           label: "Survey",           milestoneKey: "site_survey_date_completed",  dot: "#3B82F6", bg: "#EFF6FF" },
   { key: "design",           label: "Design",           milestoneKey: "design_ready_date",           dot: "#8B5CF6", bg: "#F5F3FF" },
@@ -152,7 +154,6 @@ const PIPELINE_STAGES: PipelineStage[] = [
   { key: "pto",              label: "PTO",              milestoneKey: "pto_date",                    dot: "#EC4899", bg: "#FDF2F8" },
   { key: "paid",             label: "Paid",             milestoneKey: "paid_date",                   dot: "#10B981", bg: "#ECFDF5" },
   /* Inactive stages */
-  { key: "on_hold",    label: "On-Hold",    milestoneKey: null, dot: "#F59E0B", bg: "#FEF3C7", inactive: true },
   { key: "cancelled",  label: "Cancelled",  milestoneKey: null, dot: "#EF4444", bg: "#FEF2F2", inactive: true },
   { key: "inactive",   label: "Inactive",   milestoneKey: null, dot: "#9CA3AF", bg: "#F3F4F6", inactive: true },
 ];
@@ -162,18 +163,22 @@ const INACTIVE_STAGES = PIPELINE_STAGES.filter(s => s.inactive);
 const INACTIVE_STAGE_KEYS = new Set(INACTIVE_STAGES.map(s => s.key));
 
 /* Maps stage index to last MILESTONES index that should be filled (inclusive).
-   Stage 0 (New) = -1, 1 (Survey) = 0, 2 (Design) = 1, 3 (Perm Sub) = 2,
-   4 (Perm App) = 3, 5 (Install 1) = 4, 6 (Install 2) = 5, 7 (PTO) = 6, 8 (Paid) = 7 */
-const STAGE_MILESTONE_END = [-1, 0, 1, 2, 3, 4, 5, 6, 7];
+   Stage 0 (On-Hold) = -1, 1 (New) = -1, 2 (Survey) = 0, 3 (Design) = 1,
+   4 (Perm Sub) = 2, 5 (Perm App) = 3, 6 (Install 1) = 4, 7 (Install 2) = 5,
+   8 (PTO) = 6, 9 (Paid) = 7 */
+const STAGE_MILESTONE_END = [-1, -1, 0, 1, 2, 3, 4, 5, 6, 7];
 
 function getDealStage(row: DealRow): string {
-  /* Inactive checks first */
   const status = (row.status ?? "").trim().toLowerCase();
-  if (status === "on-hold" || status === "on hold") return "on_hold";
+  /* On-Hold: active if closed >= 2024-08-01, otherwise inactive */
+  if (status === "on-hold" || status === "on hold") {
+    if (row.date_closed && row.date_closed < "2024-08-01") return "inactive";
+    return "on_hold";
+  }
   if (status === "cancelled" || status === "canceled") return "cancelled";
   if (row.date_closed && row.date_closed < "2024-08-01") return "inactive";
-  /* Active milestone walk */
-  for (let i = ACTIVE_STAGES.length - 1; i >= 1; i--) {
+  /* Active milestone walk (skip index 0 = on_hold, start from end) */
+  for (let i = ACTIVE_STAGES.length - 1; i >= 2; i--) {
     const stage = ACTIVE_STAGES[i];
     if (stage.milestoneKey !== null && row[stage.milestoneKey]) return stage.key;
   }
@@ -1263,7 +1268,7 @@ export default function Sales() {
     const currentStageKey = getDealStage(deal);
     if (targetStageKey === currentStageKey) return;
 
-    /* Block drag to/from inactive stages */
+    /* Block drag to/from inactive stages (cancelled / inactive) */
     if (INACTIVE_STAGE_KEYS.has(targetStageKey) || INACTIVE_STAGE_KEYS.has(currentStageKey)) return;
 
     const targetIdx = ACTIVE_STAGES.findIndex(s => s.key === targetStageKey);
@@ -1271,24 +1276,39 @@ export default function Sales() {
     if (targetIdx < 0) return;
 
     const today = new Date().toISOString().slice(0, 10);
-    const targetEnd = STAGE_MILESTONE_END[targetIdx];
-
     const payload: Record<string, string | null> = {};
 
-    if (targetIdx > currentIdx) {
-      // Moving forward: set missing intermediate milestone dates to today
+    /* Dragging INTO On-Hold: set status to On-Hold, don't touch milestones */
+    if (targetStageKey === "on_hold") {
+      payload.status = "On-Hold";
+    }
+    /* Dragging OUT of On-Hold: clear On-Hold status, then set milestones for target */
+    else if (currentStageKey === "on_hold") {
+      payload.status = null;
+      const targetEnd = STAGE_MILESTONE_END[targetIdx];
       for (let i = 0; i <= targetEnd; i++) {
         const mKey = MILESTONES[i].key as string;
         if (!deal[MILESTONES[i].key]) {
           payload[mKey] = today;
         }
       }
-    } else {
-      // Moving backward: clear milestone dates after the target stage
-      for (let i = targetEnd + 1; i < MILESTONES.length; i++) {
-        const mKey = MILESTONES[i].key as string;
-        if (deal[MILESTONES[i].key]) {
-          payload[mKey] = null;
+    }
+    /* Normal milestone drag */
+    else {
+      const targetEnd = STAGE_MILESTONE_END[targetIdx];
+      if (targetIdx > currentIdx) {
+        for (let i = 0; i <= targetEnd; i++) {
+          const mKey = MILESTONES[i].key as string;
+          if (!deal[MILESTONES[i].key]) {
+            payload[mKey] = today;
+          }
+        }
+      } else {
+        for (let i = targetEnd + 1; i < MILESTONES.length; i++) {
+          const mKey = MILESTONES[i].key as string;
+          if (deal[MILESTONES[i].key]) {
+            payload[mKey] = null;
+          }
         }
       }
     }
@@ -1308,7 +1328,7 @@ export default function Sales() {
     // Persist to Supabase
     const { error } = await supabase.from("deals").update(payload).eq("id", deal.id).select("id");
     if (error) {
-      console.error("Failed to update milestones:", error);
+      console.error("Failed to update deal:", error);
       load(); // reload on error to restore correct state
     }
   }
