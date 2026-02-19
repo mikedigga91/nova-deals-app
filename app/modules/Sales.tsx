@@ -993,8 +993,8 @@ export default function Sales() {
   const [viewMode, setViewMode] = useState<"kanban" | "list">("kanban");
 
   /* Inactive toggle, Paid toggle & Summary panel */
-  const [showInactive, setShowInactive] = useState(true);
-  const [showPaid, setShowPaid] = useState(true);
+  const [showInactive, setShowInactive] = useState(false);
+  const [showPaid, setShowPaid] = useState(false);
   const [summaryDeal, setSummaryDeal] = useState<DealRow | null>(null);
   const summaryPanelRef = useRef<HTMLDivElement>(null);
 
@@ -1008,7 +1008,7 @@ export default function Sales() {
   const [endDate, setEndDate] = useState("");
 
   /* Collapsible column groups — default: main 3 collapsed, NRG Adders visible */
-  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set(["nrg_adders"]));
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   function toggleGroup(groupId: string) {
     setExpandedGroups(prev => {
       const next = new Set(prev);
@@ -1388,17 +1388,17 @@ export default function Sales() {
             </div>
             <div className="flex gap-2 items-center">
               {/* View Toggle */}
-              <div className="flex rounded-lg border border-[#EBEFF3] overflow-hidden">
+              <div className="flex rounded-lg border-2 border-[#1c48a6]/30 overflow-hidden shadow-sm">
                 <button
                   type="button"
-                  className={`px-3 py-1.5 text-xs font-semibold transition-colors ${viewMode === "kanban" ? "bg-[#1c48a6] text-white" : "bg-white text-[#6B7280] hover:bg-[#F5F7F9]"}`}
+                  className={`px-5 py-2 text-sm font-bold transition-colors ${viewMode === "kanban" ? "bg-[#1c48a6] text-white" : "bg-white text-[#1c48a6] hover:bg-[#1c48a6]/5"}`}
                   onClick={() => setViewMode("kanban")}
                 >
                   Board
                 </button>
                 <button
                   type="button"
-                  className={`px-3 py-1.5 text-xs font-semibold transition-colors ${viewMode === "list" ? "bg-[#1c48a6] text-white" : "bg-white text-[#6B7280] hover:bg-[#F5F7F9]"}`}
+                  className={`px-5 py-2 text-sm font-bold transition-colors ${viewMode === "list" ? "bg-[#1c48a6] text-white" : "bg-white text-[#1c48a6] hover:bg-[#1c48a6]/5"}`}
                   onClick={() => setViewMode("list")}
                 >
                   List
@@ -1419,24 +1419,22 @@ export default function Sales() {
               <button className={UI.buttonGhost} onClick={load}>Refresh</button>
               <button className={UI.buttonGhost} onClick={clearAll}>Clear Filters</button>
               <button
-                className={`px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border transition ${
+                className={`px-2 py-1 rounded text-[10px] font-semibold border transition ${
                   showInactive
                     ? "border-[#1c48a6]/30 bg-[#1c48a6]/5 text-[#1c48a6] hover:bg-[#1c48a6]/10"
                     : "border-[#EBEFF3] bg-[#F5F7F9] text-[#6B7280] hover:bg-white"
                 }`}
                 onClick={() => setShowInactive(v => !v)}
-                title={showInactive ? "Hide inactive deal columns" : "Show inactive deal columns"}
               >
                 Inactive {showInactive ? "ON" : "OFF"}
               </button>
               <button
-                className={`px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border transition ${
+                className={`px-2 py-1 rounded text-[10px] font-semibold border transition ${
                   showPaid
                     ? "border-[#10B981]/30 bg-[#10B981]/5 text-[#10B981] hover:bg-[#10B981]/10"
                     : "border-[#EBEFF3] bg-[#F5F7F9] text-[#6B7280] hover:bg-white"
                 }`}
                 onClick={() => setShowPaid(v => !v)}
-                title={showPaid ? "Hide Paid column" : "Show Paid column"}
               >
                 Paid {showPaid ? "ON" : "OFF"}
               </button>
@@ -1452,7 +1450,7 @@ export default function Sales() {
                 ].map(g => (
                   <button
                     key={g.id}
-                    className={`px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border transition ${
+                    className={`px-2 py-1 rounded text-[10px] font-semibold border transition ${
                       expandedGroups.has(g.id)
                         ? "border-[#1c48a6]/30 bg-[#1c48a6]/5 text-[#1c48a6] hover:bg-[#1c48a6]/10"
                         : "border-[#EBEFF3] bg-[#F5F7F9] text-[#6B7280] hover:bg-white"
