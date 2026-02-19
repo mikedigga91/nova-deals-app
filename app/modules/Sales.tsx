@@ -365,6 +365,26 @@ function uniqSorted(vals: Array<string | null | undefined>) {
   return Array.from(set).sort((a, b) => a.localeCompare(b));
 }
 
+/* ─── Column widths (px) ─── */
+const W = { date: 80, name: 140, money: 110, num: 72, stage: 118, progress: 88, milestones: 100, address: 185, short: 82, long: 155, med: 108, phone: 110 };
+const NAME_KEYS = new Set(["customer_name","sales_rep","appointment_setter","call_center_appointment_setter","manager","teams"]);
+const SHORT_KEYS = new Set(["state","activated","online_deal","call_center_lead","battery_job","roof_work_needed","hoa","hoa_forms_completed","permit_status","permit_fees_paid","ntp_status","ic_status","meter_status","survey_status","sale_type"]);
+const LONG_KEYS = new Set(["email_address","company"]);
+function getColWidth(col: ColDef): number {
+  if (col.key === "__stage") return W.stage;
+  if (col.key === "__progress") return W.progress;
+  if (col.key === "__milestones") return W.milestones;
+  if (col.key === "__address") return W.address;
+  if (col.key === "phone_number") return W.phone;
+  if (NAME_KEYS.has(col.key as string)) return W.name;
+  if (SHORT_KEYS.has(col.key as string)) return W.short;
+  if (LONG_KEYS.has(col.key as string)) return W.long;
+  if (col.type === "date") return W.date;
+  if (col.type === "money") return W.money;
+  if (col.type === "num") return W.num;
+  return W.med;
+}
+
 /* ─── GHL Color Palette ─── */
 const UI = {
   card: "bg-white rounded-xl border border-[#EBEFF3] shadow-sm",
@@ -1547,12 +1567,13 @@ export default function Sales() {
           )}
           <div className="flex-1 min-h-0 flex">
           <div className="flex-1 min-h-0 overflow-auto">
-            <table className="w-full text-xs" style={{ minWidth: `${visibleColumns.length * 120}px` }}>
+            <table className="text-xs border-collapse" style={{ tableLayout: "fixed", width: visibleColumns.reduce((s, c) => s + getColWidth(c), 0) }}>
               <thead className="sticky top-0 z-10 bg-[#F5F7F9] border-b border-[#EBEFF3]">
                 <tr className="text-left text-[#000000]">
                   {visibleColumns.map((col, i) => (
                     <th key={col.key}
-                      className={`px-2.5 py-2 whitespace-nowrap border-r border-[#EBEFF3] font-semibold select-none hover:bg-[#EBEFF3] transition-colors ${i === visibleColumns.length - 1 ? "border-r-0" : ""} ${col.type === "money" || col.type === "num" ? "text-right" : ""}`}
+                      className={`px-2 py-2 border-r border-[#EBEFF3] font-semibold select-none hover:bg-[#EBEFF3] transition-colors text-[11px] leading-tight ${i === visibleColumns.length - 1 ? "border-r-0" : ""} ${col.type === "money" || col.type === "num" ? "text-right" : ""}`}
+                      style={{ width: getColWidth(col) }}
                     >
                       <span className="inline-flex items-center gap-1">
                         {col.groupParent && (
@@ -1578,9 +1599,9 @@ export default function Sales() {
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td className="px-3 py-8 text-[#6B7280] text-center" colSpan={visibleColumns.length}>Loading deals...</td></tr>
+                  <tr><td className="px-2 py-8 text-[#6B7280] text-center" colSpan={visibleColumns.length}>Loading deals...</td></tr>
                 ) : displayRows.length === 0 ? (
-                  <tr><td className="px-3 py-8 text-[#6B7280] text-center" colSpan={visibleColumns.length}>No results.</td></tr>
+                  <tr><td className="px-2 py-8 text-[#6B7280] text-center" colSpan={visibleColumns.length}>No results.</td></tr>
                 ) : (
                   displayRows.map((r, rowIdx) => {
                     const prog = getProgress(r);
@@ -1597,9 +1618,9 @@ export default function Sales() {
                       {visibleColumns.map(col => {
                         /* Stage badge cell */
                         if (col.key === "__stage") return (
-                          <td key={col.key} className="px-2.5 py-2 border-r border-[#EBEFF3]">
+                          <td key={col.key} className="px-2 py-2 border-r border-[#EBEFF3]">
                             <span
-                              className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold"
+                              className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap"
                               style={{ backgroundColor: rowStage.bg, color: rowStage.dot, border: `1px solid ${rowStage.dot}30` }}
                             >
                               <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: rowStage.dot }} />
@@ -1609,13 +1630,13 @@ export default function Sales() {
                         );
                         /* Address (computed) cell */
                         if (col.key === "__address") return (
-                          <td key={col.key} className="px-2.5 py-2 whitespace-nowrap border-r border-[#EBEFF3]">
-                            {[r.street_address, r.city, r.postal_code, r.state].filter(Boolean).join(", ")}
+                          <td key={col.key} className="px-2 py-2 border-r border-[#EBEFF3]">
+                            <div className="truncate">{[r.street_address, r.city, r.postal_code, r.state].filter(Boolean).join(", ")}</div>
                           </td>
                         );
                         /* Progress bar cell */
                         if (col.key === "__progress") return (
-                          <td key={col.key} className="px-2.5 py-2 border-r border-[#EBEFF3] text-center">
+                          <td key={col.key} className="px-2 py-2 border-r border-[#EBEFF3] text-center">
                             <div className="flex items-center justify-center gap-1.5">
                               <div className="w-12 h-1.5 rounded-full bg-[#EBEFF3] overflow-hidden">
                                 <div className={`h-full rounded-full ${progressBg(prog.pct)} transition-all`} style={{ width: `${prog.pct}%` }} />
@@ -1626,7 +1647,7 @@ export default function Sales() {
                         );
                         /* Milestone dots cell */
                         if (col.key === "__milestones") return (
-                          <td key={col.key} className="px-2.5 py-2 border-r border-[#EBEFF3]">
+                          <td key={col.key} className="px-2 py-2 border-r border-[#EBEFF3]">
                             <div className="flex items-center justify-center gap-1">
                               {MILESTONES.map(m => (
                                 <div key={m.key} title={`${m.short}: ${r[m.key] ? fmtDate(r[m.key] as string) : "Pending"}`}
@@ -1638,8 +1659,8 @@ export default function Sales() {
                         );
                         /* Standard cell */
                         return (
-                          <td key={col.key} className={`px-2.5 py-2 whitespace-nowrap border-r border-[#EBEFF3] ${col.type === "money" || col.type === "num" ? "text-right tabular-nums" : ""}`}>
-                            {cellVal(r, col)}
+                          <td key={col.key} className={`px-2 py-2 border-r border-[#EBEFF3] ${col.type === "money" || col.type === "num" ? "text-right tabular-nums" : ""}`}>
+                            <div className="truncate">{cellVal(r, col)}</div>
                           </td>
                         );
                       })}
