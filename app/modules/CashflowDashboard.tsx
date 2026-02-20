@@ -132,6 +132,7 @@ export default function CashflowDashboard() {
   const [adjustments, setAdjustments] = useState<AdjustmentRow[]>([]);
   const [advances, setAdvances] = useState<AdvanceSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [queryError, setQueryError] = useState("");
 
   /* Filters */
   const [startDate, setStartDate] = useState("2020-01-01");
@@ -153,7 +154,7 @@ export default function CashflowDashboard() {
     setLoading(true);
 
     let q = supabase.from("deals_view")
-      .select("id,customer_name,sales_rep,appointment_setter,call_center_appointment_setter,company,install_partner,status,deal_source,online_deal,call_center_lead,kw_system,net_price_per_watt,date_closed,rev,gross_profit,agent_pay,agent_payout,manager,manager_amount,nova_nrg_rev_after_fee_amount,agent_rev_after_fee_amount,paid_nova_nrg_p2_rev_date,paid_nova_nrg_p1_p2_rev_amount,paid_date,pto_date,activated,state,teams,paid_agent_p1_p2_amount,paid_agent_p1_amount,paid_agent_p2_date")
+      .select("*")
       .order("date_closed", { ascending: false }).limit(5000);
 
     if (scopeNames.length > 0 && !isCEO) {
@@ -174,6 +175,13 @@ export default function CashflowDashboard() {
       supabase.from("commission_adjustments").select("user_name,type,amount,reason,deal_id,created_at"),
       supabase.from("advances_summary").select("agent_name,total_advances,total_repayments,current_remaining_balance"),
     ]);
+
+    const errors: string[] = [];
+    if (dRes.error) { console.error("[CashflowDashboard] deals query error:", dRes.error); errors.push(`Deals: ${dRes.error.message}`); }
+    if (eRes.error) { console.error("[CashflowDashboard] earnings query error:", eRes.error); errors.push(`Earnings: ${eRes.error.message}`); }
+    if (aRes.error) { console.error("[CashflowDashboard] adjustments query error:", aRes.error); errors.push(`Adjustments: ${aRes.error.message}`); }
+    if (advRes.error) { console.error("[CashflowDashboard] advances query error:", advRes.error); errors.push(`Advances: ${advRes.error.message}`); }
+    setQueryError(errors.join(" | "));
 
     if (dRes.data) setDeals(dRes.data);
     if (eRes.data) setEarnings(eRes.data as EarningRow[]);
@@ -329,6 +337,12 @@ export default function CashflowDashboard() {
           <input className="rounded-lg border border-slate-200 px-2 py-1.5 text-xs w-40" placeholder="Search..." value={search} onChange={e => setSearch(e.target.value)} />
           <button className={UI.buttonGhost + " text-xs"} onClick={load}>Refresh</button>
         </div>
+
+        {queryError && (
+          <div className="mx-5 mt-3 p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700">
+            <span className="font-semibold">Query Error:</span> {queryError}
+          </div>
+        )}
 
         {loading ? (
           <div className="px-6 py-12 text-center text-sm text-slate-400">Loading cash flow data...</div>
