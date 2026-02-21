@@ -809,48 +809,67 @@ function UsersTab() {
             if (!sectionUsers || sectionUsers.length === 0) return null;
             return (
               <div key={section.key}>
-                <div className="flex items-center gap-2 mb-2">
+                <div className="flex items-center gap-2.5 mb-2.5">
                   <h3 className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">{section.label}</h3>
-                  <div className="flex-1 border-t border-slate-200" />
-                  <span className="text-[10px] text-slate-400 font-medium">{sectionUsers.length}</span>
+                  <div className="flex-1 h-px bg-gradient-to-r from-slate-200 to-transparent" />
+                  <span className="text-[9px] text-slate-400 font-semibold bg-slate-100 px-2 py-0.5 rounded-full">{sectionUsers.length}</span>
                 </div>
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-2.5">
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
                   {sectionUsers.map(u => {
                     const role = getRoleForUser(u);
                     const scope = getEffectiveScope(u);
                     const linkedEmp = u.linked_employee_id ? employeeMap.get(u.linked_employee_id) : undefined;
                     return (
                       <div key={u.id} onClick={() => setEditUser({ ...u })}
-                        className="group relative border rounded-lg p-2.5 bg-white shadow-sm cursor-pointer hover:shadow-md transition-shadow">
-                        <button
-                          className="absolute top-1.5 right-1.5 w-5 h-5 rounded-full bg-slate-100 text-slate-400 hover:bg-orange-100 hover:text-orange-600 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-[10px] font-bold z-10"
-                          title="Move to SNR"
-                          onClick={e => {
-                            e.stopPropagation();
-                            if (confirm(`Move ${u.display_name} to SNR (deactivate)?\n\nThis will disable portal access.${u.linked_employee_id ? "\nTheir linked employee will also be moved to SNR in the Org Chart." : ""}`)) {
-                              moveUserToSNR(u);
-                            }
-                          }}
-                        >✕</button>
-                        <div className="mb-1.5">
-                          <div className="font-semibold text-[11px] text-slate-900 leading-tight pr-5">{u.display_name}</div>
-                          <div className="text-[9px] text-slate-400 truncate">{u.email}</div>
-                        </div>
-                        <div className="flex items-center gap-1 mb-1.5 flex-wrap">
-                          <span className="text-[8px] bg-slate-800 text-white px-1.5 py-0.5 rounded font-semibold">{role?.name ?? "No Role"}</span>
-                          <span className={`text-[8px] px-1 py-0.5 rounded font-semibold ${scopeColor(scope)}`}>{scope.toUpperCase()}</span>
-                          {!u.auth_uid && (
-                            <span className="text-[8px] bg-gray-200 text-gray-600 px-1 py-0.5 rounded font-semibold">NO AUTH</span>
+                        className="group relative rounded-xl cursor-pointer transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0"
+                        style={{
+                          background: "linear-gradient(145deg, #ffffff 0%, #f8fafc 100%)",
+                          boxShadow: "0 1px 3px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.04), inset 0 1px 0 rgba(255,255,255,0.9)",
+                        }}
+                        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.boxShadow = "0 4px 16px rgba(0,0,0,0.10), 0 8px 24px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,1)"; }}
+                        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.boxShadow = "0 1px 3px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.04), inset 0 1px 0 rgba(255,255,255,0.9)"; }}
+                      >
+                        {/* Top accent bar */}
+                        <div className="h-[3px] rounded-t-xl" style={{
+                          background: scope === "all" ? "linear-gradient(90deg, #10b981, #34d399)" :
+                            scope === "team" ? "linear-gradient(90deg, #8b5cf6, #a78bfa)" :
+                            scope === "own" ? "linear-gradient(90deg, #3b82f6, #60a5fa)" :
+                            "linear-gradient(90deg, #94a3b8, #cbd5e1)",
+                        }} />
+                        <div className="p-2.5 pt-2">
+                          <button
+                            className="absolute top-2.5 right-2 w-5 h-5 rounded-full text-slate-300 hover:bg-red-50 hover:text-red-500 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all text-[10px] font-bold z-10"
+                            title="Move to SNR"
+                            onClick={e => {
+                              e.stopPropagation();
+                              if (confirm(`Move ${u.display_name} to SNR (deactivate)?\n\nThis will disable portal access.${u.linked_employee_id ? "\nTheir linked employee will also be moved to SNR in the Org Chart." : ""}`)) {
+                                moveUserToSNR(u);
+                              }
+                            }}
+                          >✕</button>
+                          <div className="mb-1.5">
+                            <div className="font-semibold text-[11px] text-slate-800 leading-tight pr-5">{u.display_name}</div>
+                            <div className="text-[9px] text-slate-400 truncate">{u.email}</div>
+                          </div>
+                          <div className="flex items-center gap-1 mb-1.5 flex-wrap">
+                            <span className="text-[8px] px-1.5 py-0.5 rounded-md font-semibold text-white" style={{
+                              background: "linear-gradient(135deg, #1e293b, #334155)",
+                              boxShadow: "0 1px 2px rgba(0,0,0,0.15)",
+                            }}>{role?.name ?? "No Role"}</span>
+                            <span className={`text-[8px] px-1 py-0.5 rounded-md font-semibold ${scopeColor(scope)}`}>{scope.toUpperCase()}</span>
+                            {!u.auth_uid && (
+                              <span className="text-[8px] bg-gray-100 text-gray-500 px-1 py-0.5 rounded-md font-semibold border border-gray-200/50">NO AUTH</span>
+                            )}
+                          </div>
+                          {linkedEmp && (
+                            <div className="text-[9px] text-blue-600 bg-blue-50/80 rounded-md px-1.5 py-0.5 truncate border border-blue-100/50">
+                              {linkedEmp.position}
+                            </div>
+                          )}
+                          {u.module_overrides && (
+                            <div className="mt-1"><span className="text-[7px] text-amber-500 font-semibold uppercase">Overrides</span></div>
                           )}
                         </div>
-                        {linkedEmp && (
-                          <div className="text-[9px] text-blue-700 bg-blue-50 rounded px-1.5 py-0.5 truncate">
-                            {linkedEmp.position}
-                          </div>
-                        )}
-                        {u.module_overrides && (
-                          <div className="mt-1"><span className="text-[7px] text-amber-500 font-semibold uppercase">Overrides</span></div>
-                        )}
                       </div>
                     );
                   })}
