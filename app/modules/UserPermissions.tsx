@@ -183,7 +183,36 @@ function UsersTab() {
 
   const roleMap = useMemo(() => new Map(roles.map(r => [r.id, r])), [roles]);
 
-  const activeUsers = useMemo(() => users.filter(u => u.is_active), [users]);
+  const DEPT_ORDER: Record<string, number> = { Executive: 0, Sales: 1, "Call Center": 2, Operation: 3, HR: 4, Finance: 5, Contingencies: 6 };
+  const POS_ORDER: Record<string, number> = {
+    CEO: 0, President: 1, VP: 2,
+    "Sales Manager": 0, "Sales Rep": 1, "Sales Assistant": 2, "Appointment Setter": 3,
+    "Call Center Manager": 0,
+    "Operations Manager": 0, "Project Manager": 1, "Project Coordinator": 2, "Project Admin": 3,
+    "HR Manager": 0, Recruiter: 1,
+    "Finance Manager": 0, Accountant: 1,
+    "Lead Generator": 0, Videographer: 1,
+  };
+
+  const activeUsers = useMemo(() => {
+    const sorted = users.filter(u => u.is_active).slice();
+    sorted.sort((a, b) => {
+      const empA = a.linked_employee_id ? employeeMap.get(a.linked_employee_id) : undefined;
+      const empB = b.linked_employee_id ? employeeMap.get(b.linked_employee_id) : undefined;
+      const deptA = empA?.department || "";
+      const deptB = empB?.department || "";
+      const posA = empA?.position || "";
+      const posB = empB?.position || "";
+      const dA = DEPT_ORDER[deptA] ?? 99;
+      const dB = DEPT_ORDER[deptB] ?? 99;
+      if (dA !== dB) return dA - dB;
+      const pA = POS_ORDER[posA] ?? 50;
+      const pB = POS_ORDER[posB] ?? 50;
+      if (pA !== pB) return pA - pB;
+      return a.display_name.localeCompare(b.display_name);
+    });
+    return sorted;
+  }, [users, employeeMap]);
   const snrUsers = useMemo(() => {
     const q = snrSearch.toLowerCase();
     return users.filter(u => !u.is_active)
@@ -586,18 +615,17 @@ function UsersTab() {
 
       {/* ═══ Active Users — Card Grid ═══ */}
       {userSubTab === "active" && (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-2.5">
           {activeUsers.map(u => {
             const role = getRoleForUser(u);
-            const mods = getEffectiveModules(u);
             const scope = getEffectiveScope(u);
             const linkedEmp = u.linked_employee_id ? employeeMap.get(u.linked_employee_id) : undefined;
             return (
               <div key={u.id} onClick={() => setEditUser({ ...u })}
-                className="group relative border rounded-xl p-4 bg-white shadow-sm cursor-pointer hover:shadow-md transition-shadow">
+                className="group relative border rounded-lg p-2.5 bg-white shadow-sm cursor-pointer hover:shadow-md transition-shadow">
                 {/* X-to-SNR button */}
                 <button
-                  className="absolute top-2 right-2 w-6 h-6 rounded-full bg-slate-100 text-slate-400 hover:bg-orange-100 hover:text-orange-600 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-xs font-bold z-10"
+                  className="absolute top-1.5 right-1.5 w-5 h-5 rounded-full bg-slate-100 text-slate-400 hover:bg-orange-100 hover:text-orange-600 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-[10px] font-bold z-10"
                   title="Move to SNR"
                   onClick={e => {
                     e.stopPropagation();
@@ -606,40 +634,24 @@ function UsersTab() {
                     }
                   }}
                 >✕</button>
-                <div className="flex items-start justify-between mb-2">
-                  <div>
-                    <div className="font-semibold text-sm text-slate-900">{u.display_name}</div>
-                    <div className="text-[10px] text-slate-500">{u.email}</div>
-                  </div>
-                  <div className="flex gap-1.5 items-center flex-wrap justify-end">
-                    {!u.auth_uid && (
-                      <span className="text-[9px] bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded font-semibold">NO AUTH</span>
-                    )}
-                    {u.auth_uid && u.must_change_password && (
-                      <span className="text-[9px] bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded font-semibold">PWD CHANGE</span>
-                    )}
-                    <span className={`text-[9px] px-1.5 py-0.5 rounded font-semibold ${scopeColor(scope)}`}>{scope.toUpperCase()}</span>
-                  </div>
+                <div className="mb-1.5">
+                  <div className="font-semibold text-[11px] text-slate-900 leading-tight pr-5">{u.display_name}</div>
+                  <div className="text-[9px] text-slate-400 truncate">{u.email}</div>
                 </div>
-                <div className="flex items-center gap-2 mb-2.5 flex-wrap">
-                  <span className="text-[10px] bg-slate-800 text-white px-2 py-0.5 rounded font-semibold">{role?.name ?? "No Role"}</span>
-                  {linkedEmp && (
-                    <span className="text-[10px] bg-blue-50 text-blue-700 px-2 py-0.5 rounded font-semibold">
-                      {linkedEmp.position}{linkedEmp.department ? ` · ${linkedEmp.department}` : ""}
-                    </span>
-                  )}
-                  {u.linked_name && <span className="text-[10px] text-slate-500">→ {u.linked_name}</span>}
-                </div>
-                <div className="flex flex-wrap gap-1">
-                  {mods.length === 0 ? <span className="text-[9px] text-slate-300 italic">No modules assigned</span> : (
-                    mods.map(m => {
-                      const mod = ALL_MODULES.find(am => am.key === m);
-                      return <span key={m} className="text-[9px] bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded font-medium">{mod?.label ?? m}</span>;
-                    })
+                <div className="flex items-center gap-1 mb-1.5 flex-wrap">
+                  <span className="text-[8px] bg-slate-800 text-white px-1.5 py-0.5 rounded font-semibold">{role?.name ?? "No Role"}</span>
+                  <span className={`text-[8px] px-1 py-0.5 rounded font-semibold ${scopeColor(scope)}`}>{scope.toUpperCase()}</span>
+                  {!u.auth_uid && (
+                    <span className="text-[8px] bg-gray-200 text-gray-600 px-1 py-0.5 rounded font-semibold">NO AUTH</span>
                   )}
                 </div>
+                {linkedEmp && (
+                  <div className="text-[9px] text-blue-700 bg-blue-50 rounded px-1.5 py-0.5 truncate">
+                    {linkedEmp.position}{linkedEmp.department ? ` · ${linkedEmp.department}` : ""}
+                  </div>
+                )}
                 {u.module_overrides && (
-                  <div className="mt-1.5"><span className="text-[8px] text-amber-500 font-semibold uppercase">Custom overrides active</span></div>
+                  <div className="mt-1"><span className="text-[7px] text-amber-500 font-semibold uppercase">Overrides</span></div>
                 )}
               </div>
             );
