@@ -18,6 +18,8 @@ type Employee = {
   date_of_birth: string | null; // NEW
   sort_order: number | null; // NEW
   is_active: boolean;
+  snr_at: string | null;
+  snr_reason: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -80,25 +82,25 @@ const SPINE_OFFSET_X = 24;        // How far left of the stacked cards the verti
 type DeptHexColor = { bar: string; barText: string; cardBg: string; cardBorder: string };
 
 const DEPT_HEX_COLORS: Record<string, DeptHexColor> = {
-  Executive: { bar: "#1e293b", barText: "#ffffff", cardBg: "#ffffff", cardBorder: "#334155" },
-  Finance: { bar: "#334155", barText: "#ffffff", cardBg: "#ffffff", cardBorder: "#475569" },
-  Operation: { bar: "#475569", barText: "#ffffff", cardBg: "#ffffff", cardBorder: "#64748b" },
-  HR: { bar: "#374151", barText: "#ffffff", cardBg: "#ffffff", cardBorder: "#4b5563" },
-  "Call Center": { bar: "#3f3f46", barText: "#ffffff", cardBg: "#ffffff", cardBorder: "#52525b" },
-  Sales: { bar: "#27272a", barText: "#ffffff", cardBg: "#ffffff", cardBorder: "#3f3f46" },
-  Contingencies: { bar: "#44403c", barText: "#ffffff", cardBg: "#ffffff", cardBorder: "#57534e" },
+  Executive: { bar: "#1e3a5f", barText: "#ffffff", cardBg: "#eef4fb", cardBorder: "#2563eb" },
+  Finance: { bar: "#065f46", barText: "#ffffff", cardBg: "#ecfdf5", cardBorder: "#10b981" },
+  Operation: { bar: "#92400e", barText: "#ffffff", cardBg: "#fffbeb", cardBorder: "#f59e0b" },
+  HR: { bar: "#6b21a8", barText: "#ffffff", cardBg: "#faf5ff", cardBorder: "#a855f7" },
+  "Call Center": { bar: "#0e7490", barText: "#ffffff", cardBg: "#ecfeff", cardBorder: "#06b6d4" },
+  Sales: { bar: "#1d4ed8", barText: "#ffffff", cardBg: "#eff6ff", cardBorder: "#3b82f6" },
+  Contingencies: { bar: "#9f1239", barText: "#ffffff", cardBg: "#fff1f2", cardBorder: "#f43f5e" },
 };
-const DEFAULT_DEPT_HEX: DeptHexColor = { bar: "#475569", barText: "#ffffff", cardBg: "#ffffff", cardBorder: "#94a3b8" };
+const DEFAULT_DEPT_HEX: DeptHexColor = { bar: "#475569", barText: "#ffffff", cardBg: "#f8fafc", cardBorder: "#94a3b8" };
 
 /* Tailwind-based badge colors for dept tabs (kept for tab styling) */
 const DEPT_COLORS: Record<string, { badge: string; badgeText: string }> = {
-  Executive: { badge: "bg-slate-100", badgeText: "text-slate-800" },
-  Finance: { badge: "bg-gray-100", badgeText: "text-gray-700" },
-  Operation: { badge: "bg-zinc-100", badgeText: "text-zinc-700" },
-  HR: { badge: "bg-stone-100", badgeText: "text-stone-700" },
-  "Call Center": { badge: "bg-neutral-100", badgeText: "text-neutral-700" },
-  Sales: { badge: "bg-slate-100", badgeText: "text-slate-700" },
-  Contingencies: { badge: "bg-gray-100", badgeText: "text-gray-700" },
+  Executive: { badge: "bg-blue-100", badgeText: "text-blue-800" },
+  Finance: { badge: "bg-emerald-100", badgeText: "text-emerald-700" },
+  Operation: { badge: "bg-amber-100", badgeText: "text-amber-700" },
+  HR: { badge: "bg-purple-100", badgeText: "text-purple-700" },
+  "Call Center": { badge: "bg-cyan-100", badgeText: "text-cyan-700" },
+  Sales: { badge: "bg-blue-100", badgeText: "text-blue-700" },
+  Contingencies: { badge: "bg-rose-100", badgeText: "text-rose-700" },
 };
 const DEFAULT_DEPT_COLOR = { badge: "bg-slate-100", badgeText: "text-slate-600" };
 const getDeptColor = (dept: string) => DEPT_COLORS[dept] || DEFAULT_DEPT_COLOR;
@@ -589,6 +591,8 @@ export default function OrgChart() {
   const [loading, setLoading] = useState(true);
   const [collapsedSet, setCollapsedSet] = useState<Set<string>>(new Set());
   const [filterDept, setFilterDept] = useState<string | null>(null);
+  const [mainTab, setMainTab] = useState<"chart" | "snr">("chart");
+  const [snrSearch, setSnrSearch] = useState("");
 
   const [linkedEmployeeIds, setLinkedEmployeeIds] = useState<Set<string>>(new Set());
 
@@ -756,6 +760,15 @@ export default function OrgChart() {
       ))
       .slice(0, 8);
   }, [searchQuery, employees]);
+
+  /* ── SNR (inactive) employees for the SNR list view ── */
+  const snrEmployees = useMemo(() => {
+    const q = snrSearch.toLowerCase();
+    return employees
+      .filter(e => !e.is_active)
+      .filter(e => !snrSearch || (e.full_name || "").toLowerCase().includes(q) || (e.position || "").toLowerCase().includes(q) || (e.department || "").toLowerCase().includes(q))
+      .sort((a, b) => (b.snr_at || "").localeCompare(a.snr_at || ""));
+  }, [employees, snrSearch]);
 
   /* ── Toggle Collapse ── */
   const toggleCollapse = (id: string) => {
@@ -962,6 +975,8 @@ export default function OrgChart() {
     date_of_birth: null,
     sort_order: null,
     is_active: true,
+    snr_at: null,
+    snr_reason: null,
     created_at: "",
     updated_at: "",
   };
@@ -991,6 +1006,8 @@ export default function OrgChart() {
       hire_date: editEmp.hire_date || null,
       date_of_birth: editEmp.date_of_birth || null,
       is_active: editEmp.is_active,
+      snr_at: editEmp.snr_at || null,
+      snr_reason: editEmp.snr_reason || null,
     };
 
     // If creating and sort_order not set, set to end of siblings
@@ -1109,6 +1126,62 @@ export default function OrgChart() {
 
     setEditEmp(null);
     setEditEmpColor(null);
+    load();
+  }
+
+  async function moveToSNR(emp: Employee) {
+    const hasReports = employees.some(e => e.manager_id === emp.id && e.is_active);
+    if (hasReports) {
+      setMsg("Cannot move to SNR: this employee has active direct reports. Reassign them first.");
+      return;
+    }
+
+    // Soft-delete: set inactive + SNR timestamp
+    const { error } = await supabase.from("employees").update({
+      is_active: false,
+      snr_at: new Date().toISOString(),
+      snr_reason: null,
+    }).eq("id", emp.id);
+    if (error) { setMsg(`Error: ${error.message}`); return; }
+
+    // Cascade to linked portal_users
+    const { data: deactivatedPU } = await supabase.from("portal_users")
+      .update({ is_active: false, deactivation_source: "orgchart_snr" })
+      .eq("linked_employee_id", emp.id)
+      .select("id, auth_uid");
+    if (deactivatedPU) {
+      for (const pu of deactivatedPU) {
+        if (pu.auth_uid) adminAuthAction("ban", { portal_user_id: pu.id });
+      }
+    }
+
+    setEditEmp(null);
+    setEditEmpColor(null);
+    load();
+  }
+
+  async function reinstateEmployee(id: string) {
+    // Reactivate employee
+    const { error } = await supabase.from("employees").update({
+      is_active: true,
+      snr_at: null,
+      snr_reason: null,
+    }).eq("id", id);
+    if (error) { setMsg(`Error: ${error.message}`); return; }
+
+    // Reactivate linked portal_users that were SNR'd or deactivated via orgchart
+    const { data: reactivatedPU } = await supabase.from("portal_users")
+      .update({ is_active: true, deactivation_source: null })
+      .eq("linked_employee_id", id)
+      .in("deactivation_source", ["orgchart_snr", "orgchart_deactivated", "usermgmt_snr"])
+      .select("id, auth_uid");
+    if (reactivatedPU) {
+      for (const pu of reactivatedPU) {
+        if (pu.auth_uid) adminAuthAction("unban", { portal_user_id: pu.id });
+      }
+    }
+
+    setMsg(null);
     load();
   }
 
@@ -1441,6 +1514,27 @@ export default function OrgChart() {
                 <h2 className="text-base font-bold text-slate-800 tracking-tight">Nova NRG Organizational Chart</h2>
                 <p className="text-xs text-slate-400">{employees.filter(e => e.is_active).length} active members</p>
               </div>
+
+              {/* Main Tab Switcher */}
+              <div className="flex items-center bg-slate-100 rounded-lg p-0.5">
+                <button
+                  onClick={() => setMainTab("chart")}
+                  className={`px-3.5 py-1.5 rounded-md text-[11px] font-semibold transition-all ${mainTab === "chart" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+                >
+                  Org Chart
+                </button>
+                <button
+                  onClick={() => setMainTab("snr")}
+                  className={`px-3.5 py-1.5 rounded-md text-[11px] font-semibold transition-all flex items-center gap-1.5 ${mainTab === "snr" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+                >
+                  SNR
+                  {snrEmployees.length > 0 && (
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold leading-none ${mainTab === "snr" ? "bg-orange-100 text-orange-700" : "bg-slate-200 text-slate-500"}`}>
+                      {snrEmployees.length}
+                    </span>
+                  )}
+                </button>
+              </div>
             </div>
 
             <div className="flex items-center gap-2.5">
@@ -1512,8 +1606,8 @@ export default function OrgChart() {
             </div>
           </div>
 
-          {/* Department Tabs */}
-          <div className="mt-3 flex items-center gap-2">
+          {/* Department Tabs — only visible in chart mode */}
+          {mainTab === "chart" && <div className="mt-3 flex items-center gap-2">
             <button
               onClick={() => { selectDept(null); }}
               className={`px-3.5 py-1.5 rounded-full text-[11px] font-semibold transition-all ${!filterDept ? "bg-slate-800 text-white shadow-sm" : "bg-slate-100 text-slate-500 hover:bg-slate-200"}`}
@@ -1582,10 +1676,10 @@ export default function OrgChart() {
                 </div>
               )}
             </div>
-          </div>
+          </div>}
 
           {/* Roles panel with Input Area + Color Picker */}
-          {activeDept && (
+          {mainTab === "chart" && activeDept && (
             <div className="mt-3 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">
               <div className="flex items-center justify-between gap-3">
                 <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">{activeDept} Roles</div>
@@ -1675,8 +1769,140 @@ export default function OrgChart() {
         </div>
       </div>
 
-      {/* ═══ Chart Canvas ═══ */}
-      {nodes.length === 0 ? (
+      {/* ═══ SNR List View ═══ */}
+      {mainTab === "snr" ? (
+        <div className="flex-1 overflow-auto p-6 bg-slate-50/50">
+          <div className="max-w-5xl mx-auto">
+            {/* SNR Header */}
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-lg bg-orange-100 flex items-center justify-center">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#c2410c" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                    <circle cx="12" cy="7" r="4"/>
+                    <line x1="2" y1="2" x2="22" y2="22"/>
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-800">{snrEmployees.length} inactive employee{snrEmployees.length !== 1 ? "s" : ""}</h3>
+                  <p className="text-[10px] text-slate-400">Service No Longer Required — these employees can be reinstated</p>
+                </div>
+              </div>
+              {/* SNR search */}
+              <div className="relative">
+                <input
+                  className="w-60 border border-slate-200 rounded-lg px-3.5 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-slate-400 pl-9 transition-all"
+                  placeholder="Search SNR list…"
+                  value={snrSearch}
+                  onChange={e => setSnrSearch(e.target.value)}
+                />
+                <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
+                </svg>
+              </div>
+            </div>
+
+            {snrEmployees.length === 0 ? (
+              <div className="text-center py-16">
+                <div className="text-sm text-slate-400 font-medium">No inactive employees</div>
+                <div className="text-xs text-slate-300 mt-1">Employees moved to SNR will appear here</div>
+              </div>
+            ) : (
+              <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                {/* Table header */}
+                <div className="grid grid-cols-[52px_1fr_1fr_1fr_100px_auto] gap-3 px-4 py-2.5 border-b border-slate-100 bg-slate-50/80">
+                  <div />
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Name</div>
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Position</div>
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Department</div>
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">SNR Date</div>
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider text-right">Actions</div>
+                </div>
+
+                {snrEmployees.map(emp => (
+                  <div key={emp.id} className="grid grid-cols-[52px_1fr_1fr_1fr_100px_auto] gap-3 px-4 py-3 border-b border-slate-50 last:border-0 hover:bg-slate-50/50 items-center transition-colors">
+                    {/* Avatar */}
+                    <div className="flex-shrink-0 rounded-lg overflow-hidden border border-slate-100">
+                      {emp.avatar_url ? (
+                        <img src={emp.avatar_url} alt={emp.full_name} className="w-[44px] h-[44px] object-cover opacity-60" />
+                      ) : (
+                        <div className="opacity-60">
+                          <AvatarIllustration name={emp.full_name} size={44} />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Name + contact */}
+                    <div className="min-w-0">
+                      <div className="text-xs font-bold text-slate-700 truncate">{emp.full_name}</div>
+                      {emp.email && <div className="text-[10px] text-slate-400 truncate">{emp.email}</div>}
+                      {emp.phone && <div className="text-[10px] text-slate-400 truncate">{emp.phone}</div>}
+                    </div>
+
+                    {/* Position */}
+                    <div className="min-w-0">
+                      <div className="text-xs text-slate-600 truncate">{emp.position || "—"}</div>
+                    </div>
+
+                    {/* Department + SNR badge */}
+                    <div className="min-w-0 flex items-center gap-2">
+                      <span className="text-xs text-slate-600 truncate">{emp.department || "—"}</span>
+                      <span className="text-[9px] bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded font-bold flex-shrink-0">SNR</span>
+                    </div>
+
+                    {/* SNR Date */}
+                    <div className="text-[11px] text-slate-400">
+                      {emp.snr_at ? new Date(emp.snr_at).toLocaleDateString() : "—"}
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex items-center gap-1.5 justify-end">
+                      <button
+                        className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors flex items-center gap-1"
+                        onClick={() => {
+                          if (confirm(`Reinstate ${emp.full_name}?\n\nThey will be returned to the org chart and their portal access will be restored.`)) {
+                            reinstateEmployee(emp.id);
+                          }
+                        }}
+                        title="Reinstate employee"
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="1 4 1 10 7 10"/>
+                          <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+                        </svg>
+                        Reinstate
+                      </button>
+
+                      <button
+                        className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100 transition-colors"
+                        onClick={() => { setEditEmp({ ...emp }); setEditEmpColor(customEmpColors[emp.id] || null); }}
+                        title="Edit employee"
+                      >
+                        Edit
+                      </button>
+
+                      <button
+                        className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold text-red-500 hover:bg-red-50 border border-transparent hover:border-red-200 transition-colors"
+                        onClick={() => {
+                          if (confirm(`Permanently delete ${emp.full_name}?\n\nThis cannot be undone.`)) {
+                            deleteEmployee(emp.id);
+                          }
+                        }}
+                        title="Permanently delete"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      ) : (
+
+      /* ═══ Chart Canvas ═══ */
+      nodes.length === 0 ? (
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center">
             <div className="text-sm text-slate-500 font-medium">No employees found</div>
@@ -1984,11 +2210,11 @@ export default function OrgChart() {
                       opacity-0 group-hover:opacity-100"
                     onClick={(e) => {
                       e.stopPropagation();
-                      if (confirm(`Delete ${emp.full_name}?\n\nIf they have direct reports, you must reassign first.`)) {
-                        deleteEmployee(emp.id);
+                      if (confirm(`Move ${emp.full_name} to SNR (Service No Longer Required)?\n\nThey will be removed from the org chart but can be reinstated later.`)) {
+                        moveToSNR(emp);
                       }
                     }}
-                    title="Delete"
+                    title="Move to SNR"
                   >
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                       <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
@@ -2016,7 +2242,7 @@ export default function OrgChart() {
             </button>
           </div>
         </div>
-      )}
+      ))}
 
       </div>{/* end rounded card wrapper */}
 
@@ -2226,6 +2452,34 @@ export default function OrgChart() {
                 </div>
               </div>
 
+              {/* SNR Info — shown for inactive employees */}
+              {editEmp.id && !editEmp.is_active && (
+                <div className="p-3 rounded-lg bg-orange-50 border border-orange-200 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[9px] bg-orange-100 text-orange-700 px-2 py-0.5 rounded font-bold">SNR</span>
+                    <span className="text-[11px] font-semibold text-orange-800">Service No Longer Required</span>
+                    {editEmp.snr_at && (
+                      <span className="text-[10px] text-orange-500 ml-auto">SNR Date: {new Date(editEmp.snr_at).toLocaleDateString()}</span>
+                    )}
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-medium text-orange-700 block mb-1">SNR Reason (optional)</label>
+                    <select
+                      className="w-full border border-orange-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-400 transition-all"
+                      value={editEmp.snr_reason || ""}
+                      onChange={e => se("snr_reason", e.target.value || null)}
+                    >
+                      <option value="">No reason specified</option>
+                      <option value="Performance">Performance</option>
+                      <option value="Voluntary">Voluntary</option>
+                      <option value="Restructuring">Restructuring</option>
+                      <option value="End of Contract">End of Contract</option>
+                      <option value="Other">Other</option>
+                    </select>
+                  </div>
+                </div>
+              )}
+
               {msg && (
                 <div className="text-xs text-red-600 bg-red-50 border border-red-100 px-3 py-2 rounded-lg">
                   {msg}
@@ -2235,16 +2489,34 @@ export default function OrgChart() {
 
             <div className="flex items-center justify-between px-6 py-4 border-t border-slate-100 bg-slate-50/50 rounded-b-2xl">
               {editEmp.id ? (
-                <button
-                  className="px-4 py-2 text-xs font-semibold text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                  onClick={() => {
-                    if (confirm(`Are you sure you want to delete ${editEmp.full_name}?\n\nDirect reports will need to be reassigned.`)) {
-                      deleteEmployee(editEmp.id);
-                    }
-                  }}
-                >
-                  Delete Employee
-                </button>
+                editEmp.is_active ? (
+                  <button
+                    className="px-4 py-2 text-xs font-semibold text-orange-600 hover:bg-orange-50 rounded-lg transition-colors flex items-center gap-1.5"
+                    onClick={() => {
+                      if (confirm(`Move ${editEmp.full_name} to SNR (Service No Longer Required)?\n\nThey will be removed from the org chart but can be reinstated later.`)) {
+                        moveToSNR(editEmp);
+                      }
+                    }}
+                  >
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                      <circle cx="12" cy="7" r="4"/>
+                      <line x1="2" y1="2" x2="22" y2="22"/>
+                    </svg>
+                    Move to SNR
+                  </button>
+                ) : (
+                  <button
+                    className="px-4 py-2 text-xs font-semibold text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                    onClick={() => {
+                      if (confirm(`Permanently delete ${editEmp.full_name}?\n\nThis cannot be undone.`)) {
+                        deleteEmployee(editEmp.id);
+                      }
+                    }}
+                  >
+                    Permanently Delete
+                  </button>
+                )
               ) : <div />}
 
               <div className="flex gap-2">
