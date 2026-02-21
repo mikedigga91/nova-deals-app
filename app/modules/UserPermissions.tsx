@@ -183,7 +183,15 @@ function UsersTab() {
 
   const roleMap = useMemo(() => new Map(roles.map(r => [r.id, r])), [roles]);
 
-  const DEPT_ORDER: Record<string, number> = { Executive: 0, Sales: 1, "Call Center": 2, Operation: 3, HR: 4, Finance: 5, Contingencies: 6 };
+  const DEPT_SECTIONS: { key: string; label: string }[] = [
+    { key: "Executive", label: "Executive" },
+    { key: "Sales", label: "Sales" },
+    { key: "Call Center", label: "Call Center" },
+    { key: "Operation", label: "Operations" },
+    { key: "HR", label: "Human Resources" },
+    { key: "Finance", label: "Finance" },
+    { key: "Contingencies", label: "Contingencies" },
+  ];
   const POS_ORDER: Record<string, number> = {
     CEO: 0, President: 1, VP: 2,
     "Sales Manager": 0, "Sales Rep": 1, "Sales Assistant": 2, "Appointment Setter": 3,
@@ -194,25 +202,30 @@ function UsersTab() {
     "Lead Generator": 0, Videographer: 1,
   };
 
-  const activeUsers = useMemo(() => {
-    const sorted = users.filter(u => u.is_active).slice();
-    sorted.sort((a, b) => {
-      const empA = a.linked_employee_id ? employeeMap.get(a.linked_employee_id) : undefined;
-      const empB = b.linked_employee_id ? employeeMap.get(b.linked_employee_id) : undefined;
-      const deptA = empA?.department || "";
-      const deptB = empB?.department || "";
-      const posA = empA?.position || "";
-      const posB = empB?.position || "";
-      const dA = DEPT_ORDER[deptA] ?? 99;
-      const dB = DEPT_ORDER[deptB] ?? 99;
-      if (dA !== dB) return dA - dB;
-      const pA = POS_ORDER[posA] ?? 50;
-      const pB = POS_ORDER[posB] ?? 50;
-      if (pA !== pB) return pA - pB;
-      return a.display_name.localeCompare(b.display_name);
-    });
-    return sorted;
-  }, [users, employeeMap]);
+  const activeUsers = useMemo(() => users.filter(u => u.is_active), [users]);
+
+  /** Active users grouped by department, each group sorted by position then name */
+  const activeUsersByDept = useMemo(() => {
+    const deptMap = new Map<string, PortalUser[]>();
+    for (const u of activeUsers) {
+      const emp = u.linked_employee_id ? employeeMap.get(u.linked_employee_id) : undefined;
+      const dept = emp?.department || "_unassigned";
+      if (!deptMap.has(dept)) deptMap.set(dept, []);
+      deptMap.get(dept)!.push(u);
+    }
+    // Sort within each group
+    for (const [, list] of deptMap) {
+      list.sort((a, b) => {
+        const empA = a.linked_employee_id ? employeeMap.get(a.linked_employee_id) : undefined;
+        const empB = b.linked_employee_id ? employeeMap.get(b.linked_employee_id) : undefined;
+        const pA = POS_ORDER[empA?.position || ""] ?? 50;
+        const pB = POS_ORDER[empB?.position || ""] ?? 50;
+        if (pA !== pB) return pA - pB;
+        return a.display_name.localeCompare(b.display_name);
+      });
+    }
+    return deptMap;
+  }, [activeUsers, employeeMap]);
   const snrUsers = useMemo(() => {
     const q = snrSearch.toLowerCase();
     return users.filter(u => !u.is_active)
@@ -613,52 +626,66 @@ function UsersTab() {
         </div>
       </div>
 
-      {/* ═══ Active Users — Card Grid ═══ */}
+      {/* ═══ Active Users — Grouped by Department ═══ */}
       {userSubTab === "active" && (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-2.5">
-          {activeUsers.map(u => {
-            const role = getRoleForUser(u);
-            const scope = getEffectiveScope(u);
-            const linkedEmp = u.linked_employee_id ? employeeMap.get(u.linked_employee_id) : undefined;
+        <div className="space-y-5">
+          {activeUsers.length === 0 && (
+            <div className="text-center py-12 text-slate-400 text-sm">No active users. Click "+ Add User" to create one.</div>
+          )}
+          {[...DEPT_SECTIONS, { key: "_unassigned", label: "Unassigned" }].map(section => {
+            const sectionUsers = activeUsersByDept.get(section.key);
+            if (!sectionUsers || sectionUsers.length === 0) return null;
             return (
-              <div key={u.id} onClick={() => setEditUser({ ...u })}
-                className="group relative border rounded-lg p-2.5 bg-white shadow-sm cursor-pointer hover:shadow-md transition-shadow">
-                {/* X-to-SNR button */}
-                <button
-                  className="absolute top-1.5 right-1.5 w-5 h-5 rounded-full bg-slate-100 text-slate-400 hover:bg-orange-100 hover:text-orange-600 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-[10px] font-bold z-10"
-                  title="Move to SNR"
-                  onClick={e => {
-                    e.stopPropagation();
-                    if (confirm(`Move ${u.display_name} to SNR (deactivate)?\n\nThis will disable portal access.${u.linked_employee_id ? "\nTheir linked employee will also be moved to SNR in the Org Chart." : ""}`)) {
-                      moveUserToSNR(u);
-                    }
-                  }}
-                >✕</button>
-                <div className="mb-1.5">
-                  <div className="font-semibold text-[11px] text-slate-900 leading-tight pr-5">{u.display_name}</div>
-                  <div className="text-[9px] text-slate-400 truncate">{u.email}</div>
+              <div key={section.key}>
+                <div className="flex items-center gap-2 mb-2">
+                  <h3 className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">{section.label}</h3>
+                  <div className="flex-1 border-t border-slate-200" />
+                  <span className="text-[10px] text-slate-400 font-medium">{sectionUsers.length}</span>
                 </div>
-                <div className="flex items-center gap-1 mb-1.5 flex-wrap">
-                  <span className="text-[8px] bg-slate-800 text-white px-1.5 py-0.5 rounded font-semibold">{role?.name ?? "No Role"}</span>
-                  <span className={`text-[8px] px-1 py-0.5 rounded font-semibold ${scopeColor(scope)}`}>{scope.toUpperCase()}</span>
-                  {!u.auth_uid && (
-                    <span className="text-[8px] bg-gray-200 text-gray-600 px-1 py-0.5 rounded font-semibold">NO AUTH</span>
-                  )}
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-2.5">
+                  {sectionUsers.map(u => {
+                    const role = getRoleForUser(u);
+                    const scope = getEffectiveScope(u);
+                    const linkedEmp = u.linked_employee_id ? employeeMap.get(u.linked_employee_id) : undefined;
+                    return (
+                      <div key={u.id} onClick={() => setEditUser({ ...u })}
+                        className="group relative border rounded-lg p-2.5 bg-white shadow-sm cursor-pointer hover:shadow-md transition-shadow">
+                        <button
+                          className="absolute top-1.5 right-1.5 w-5 h-5 rounded-full bg-slate-100 text-slate-400 hover:bg-orange-100 hover:text-orange-600 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-[10px] font-bold z-10"
+                          title="Move to SNR"
+                          onClick={e => {
+                            e.stopPropagation();
+                            if (confirm(`Move ${u.display_name} to SNR (deactivate)?\n\nThis will disable portal access.${u.linked_employee_id ? "\nTheir linked employee will also be moved to SNR in the Org Chart." : ""}`)) {
+                              moveUserToSNR(u);
+                            }
+                          }}
+                        >✕</button>
+                        <div className="mb-1.5">
+                          <div className="font-semibold text-[11px] text-slate-900 leading-tight pr-5">{u.display_name}</div>
+                          <div className="text-[9px] text-slate-400 truncate">{u.email}</div>
+                        </div>
+                        <div className="flex items-center gap-1 mb-1.5 flex-wrap">
+                          <span className="text-[8px] bg-slate-800 text-white px-1.5 py-0.5 rounded font-semibold">{role?.name ?? "No Role"}</span>
+                          <span className={`text-[8px] px-1 py-0.5 rounded font-semibold ${scopeColor(scope)}`}>{scope.toUpperCase()}</span>
+                          {!u.auth_uid && (
+                            <span className="text-[8px] bg-gray-200 text-gray-600 px-1 py-0.5 rounded font-semibold">NO AUTH</span>
+                          )}
+                        </div>
+                        {linkedEmp && (
+                          <div className="text-[9px] text-blue-700 bg-blue-50 rounded px-1.5 py-0.5 truncate">
+                            {linkedEmp.position}
+                          </div>
+                        )}
+                        {u.module_overrides && (
+                          <div className="mt-1"><span className="text-[7px] text-amber-500 font-semibold uppercase">Overrides</span></div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
-                {linkedEmp && (
-                  <div className="text-[9px] text-blue-700 bg-blue-50 rounded px-1.5 py-0.5 truncate">
-                    {linkedEmp.position}{linkedEmp.department ? ` · ${linkedEmp.department}` : ""}
-                  </div>
-                )}
-                {u.module_overrides && (
-                  <div className="mt-1"><span className="text-[7px] text-amber-500 font-semibold uppercase">Overrides</span></div>
-                )}
               </div>
             );
           })}
-          {activeUsers.length === 0 && (
-            <div className="col-span-full text-center py-12 text-slate-400 text-sm">No active users. Click "+ Add User" to create one.</div>
-          )}
         </div>
       )}
 
