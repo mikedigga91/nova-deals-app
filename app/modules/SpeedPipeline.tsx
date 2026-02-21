@@ -12,6 +12,7 @@ const COL = {
 
   sale_date: "date_closed",
   site_survey: "site_survey_date_completed",
+  design_submitted: "design_submitted_date",
   design_ready: "design_ready_date",
   permit_submitted: "permit_submitted_date",
   permit_approved: "permit_approved_date",
@@ -31,6 +32,7 @@ type DealRow = {
 
   date_closed: string | null;
   site_survey_date_completed: string | null;
+  design_submitted_date?: string | null;
 
   design_ready_date?: string | null;
   permit_submitted_date?: string | null;
@@ -175,6 +177,7 @@ function nfmt(n: number | null | undefined, d = 2) {
 
 type Durations = {
   sale_to_ss: number | null;
+  sale_to_design_submitted: number | null;
   sale_to_design_ready: number | null;
   sale_to_permit_submitted: number | null;
   sale_to_permit_approved: number | null;
@@ -183,7 +186,8 @@ type Durations = {
   sale_to_paid: number | null;
   sale_to_pto: number | null;
 
-  ss_to_design_ready: number | null;
+  ss_to_design_submitted: number | null;
+  design_submitted_to_design_ready: number | null;
   design_ready_to_permit_submitted: number | null;
   permit_submitted_to_permit_approved: number | null;
   permit_approved_to_install1: number | null;
@@ -195,6 +199,7 @@ type Durations = {
 function computeDurations(r: DealRow): Durations {
   const sale = r[COL.sale_date] as string | null;
   const ss = r[COL.site_survey] as string | null;
+  const ds = r[COL.design_submitted] as string | null;
   const dr = r[COL.design_ready] as string | null;
   const ps = r[COL.permit_submitted] as string | null;
   const pa = r[COL.permit_approved] as string | null;
@@ -204,6 +209,7 @@ function computeDurations(r: DealRow): Durations {
   const pto = r[COL.pto] as string | null;
 
   const sale_to_ss = nonNeg(daysDiff(sale, ss));
+  const sale_to_design_submitted = nonNeg(daysDiff(sale, ds));
   const sale_to_design_ready = nonNeg(daysDiff(sale, dr));
   const sale_to_permit_submitted = nonNeg(daysDiff(sale, ps));
   const sale_to_permit_approved = nonNeg(daysDiff(sale, pa));
@@ -212,7 +218,8 @@ function computeDurations(r: DealRow): Durations {
   const sale_to_paid = nonNeg(daysDiff(sale, paid));
   const sale_to_pto = nonNeg(daysDiff(sale, pto));
 
-  const ss_to_design_ready = nonNeg(daysDiff(ss, dr));
+  const ss_to_design_submitted = nonNeg(daysDiff(ss, ds));
+  const design_submitted_to_design_ready = nonNeg(daysDiff(ds, dr));
   const design_ready_to_permit_submitted = nonNeg(daysDiff(dr, ps));
   const permit_submitted_to_permit_approved = nonNeg(daysDiff(ps, pa));
   const permit_approved_to_install1 = nonNeg(daysDiff(pa, i1));
@@ -222,6 +229,7 @@ function computeDurations(r: DealRow): Durations {
 
   return {
     sale_to_ss,
+    sale_to_design_submitted,
     sale_to_design_ready,
     sale_to_permit_submitted,
     sale_to_permit_approved,
@@ -229,7 +237,8 @@ function computeDurations(r: DealRow): Durations {
     sale_to_install2,
     sale_to_paid,
     sale_to_pto,
-    ss_to_design_ready,
+    ss_to_design_submitted,
+    design_submitted_to_design_ready,
     design_ready_to_permit_submitted,
     permit_submitted_to_permit_approved,
     permit_approved_to_install1,
@@ -253,6 +262,7 @@ type AgingRow = {
 
 const SALE_TO_STAGE_COLS: Array<{ key: keyof Durations; label: string }> = [
   { key: "sale_to_ss", label: "Sale to SS" },
+  { key: "sale_to_design_submitted", label: "Sale to Design Submitted" },
   { key: "sale_to_design_ready", label: "Sale to Design Ready" },
   { key: "sale_to_permit_submitted", label: "Sale to Permit Submitted" },
   { key: "sale_to_permit_approved", label: "Sale to Permit Approved" },
@@ -264,7 +274,8 @@ const SALE_TO_STAGE_COLS: Array<{ key: keyof Durations; label: string }> = [
 
 const STAGE_TO_STAGE_COLS: Array<{ key: keyof Durations; label: string }> = [
   { key: "sale_to_ss", label: "Sale to SS" },
-  { key: "ss_to_design_ready", label: "SS to Design Ready" },
+  { key: "ss_to_design_submitted", label: "SS to Design Submitted" },
+  { key: "design_submitted_to_design_ready", label: "Design Submitted to Design Ready" },
   { key: "design_ready_to_permit_submitted", label: "Design Ready to Permit Submitted" },
   { key: "permit_submitted_to_permit_approved", label: "Permit Submitted to Permit Approved" },
   { key: "permit_approved_to_install1", label: "Permit Approved to Install 1" },
@@ -300,11 +311,11 @@ function matchStatus(r: DealRow, mode: StatusFilterMode, selected: string[]) {
 }
 
 function isDealsField(fieldKey: string) {
-  return fieldKey === COL.customer_name || fieldKey === COL.status || fieldKey === COL.activated || fieldKey === COL.sale_date;
+  return fieldKey === COL.customer_name || fieldKey === COL.status || fieldKey === COL.activated || fieldKey === COL.sale_date || fieldKey === COL.site_survey;
 }
 function isStageField(fieldKey: string) {
   return (
-    fieldKey === COL.site_survey ||
+    fieldKey === COL.design_submitted ||
     fieldKey === COL.design_ready ||
     fieldKey === COL.permit_submitted ||
     fieldKey === COL.permit_approved ||
@@ -343,10 +354,12 @@ export default function SpeedPipeline() {
   const [customStatuses, setCustomStatuses] = useState<string[]>([...ACTIVE_STATUSES]);
 
   const [agingMode, setAgingMode] = useState<AgingMode>("receivable");
+  const [chartsCollapsed, setChartsCollapsed] = useState(false);
 
   // Modal editor state
   const [editingRow, setEditingRow] = useState<DealRow | null>(null);
   const [editValues, setEditValues] = useState<Record<string, string>>({});
+  const sheetScrollRef = useRef<HTMLDivElement | null>(null);
 
   // Add record modal state
   const [adding, setAdding] = useState(false);
@@ -369,8 +382,10 @@ export default function SpeedPipeline() {
   function openEditor(row: DealRow) {
     setEditingRow(row);
     setEditValues({
+      status: row[COL.status] ?? "",
       sale_date: toISODateValue(row[COL.sale_date]),
       site_survey: toISODateValue(row[COL.site_survey]),
+      design_submitted: toISODateValue(row[COL.design_submitted]),
       design_ready: toISODateValue(row[COL.design_ready]),
       permit_submitted: toISODateValue(row[COL.permit_submitted]),
       permit_approved: toISODateValue(row[COL.permit_approved]),
@@ -378,6 +393,7 @@ export default function SpeedPipeline() {
       install2: toISODateValue(row[COL.install2]),
       paid: toISODateValue(row[COL.paid]),
       pto: toISODateValue(row[COL.pto]),
+      activated: row[COL.activated] ?? "",
     });
   }
 
@@ -533,10 +549,10 @@ export default function SpeedPipeline() {
     return out;
   }, [display, companies, agingMode]);
 
-  async function updateField(rowId: string, fieldKey: string, valueInput: string) {
-    setMsg(null);
-
-    const value = normalizeInputDate(valueInput);
+  async function updateField(rowId: string, fieldKey: string, valueInput: string): Promise<boolean> {
+    const isDate = fieldKey === COL.sale_date || fieldKey === COL.site_survey || isStageField(fieldKey);
+    const isText = fieldKey === COL.status || fieldKey === COL.activated;
+    const value = isText ? (valueInput.trim() || null) : normalizeInputDate(valueInput);
 
     if (isDealsField(fieldKey)) {
       const payload: Record<string, any> = {};
@@ -546,11 +562,11 @@ export default function SpeedPipeline() {
 
       if (error) {
         setMsg(`Update error (deals.${fieldKey}): ${error.message}`);
-        return;
+        return false;
       }
 
       setRows((prev) => prev.map((r) => (r.id === rowId ? ({ ...r, [fieldKey]: value } as DealRow) : r)));
-      return;
+      return true;
     }
 
     if (isStageField(fieldKey)) {
@@ -565,7 +581,7 @@ export default function SpeedPipeline() {
 
       if (updErr) {
         setMsg(`Update error (deal_stages.${fieldKey}): ${updErr.message}`);
-        return;
+        return false;
       }
 
       if (!upd || upd.length === 0) {
@@ -574,15 +590,16 @@ export default function SpeedPipeline() {
 
         if (insErr) {
           setMsg(`Insert error (deal_stages.${fieldKey}): ${insErr.message}`);
-          return;
+          return false;
         }
       }
 
       setRows((prev) => prev.map((r) => (r.id === rowId ? ({ ...r, [fieldKey]: value } as DealRow) : r)));
-      return;
+      return true;
     }
 
     setMsg(`Unknown field: ${fieldKey}`);
+    return false;
   }
 
   async function addRecord() {
@@ -634,6 +651,7 @@ export default function SpeedPipeline() {
   const STAGE_DATE_HEADERS = [
     "Sale Date",
     "SS Date",
+    "Design Submitted Date",
     "Design Ready Date",
     "Permit Submitted Date",
     "Permit Approved Date",
@@ -641,10 +659,12 @@ export default function SpeedPipeline() {
     "Install 2 Panel Landed Date",
     "Paid Date",
     "PTO Date",
+    "Activated",
   ];
 
   const SALE_TO_STAGE_HEADERS = [
     "Sale to SS",
+    "Sale to Design Submitted",
     "Sale to Design Ready",
     "Sale to Permit Submitted",
     "Sale to Permit Approved",
@@ -656,7 +676,8 @@ export default function SpeedPipeline() {
 
   const STAGE_TO_STAGE_HEADERS = [
     "Sale to SS",
-    "SS to Design Ready",
+    "SS to Design Submitted",
+    "Design Submitted to Design Ready",
     "Design Ready to Permit Submitted",
     "Permit Submitted to Permit Approved",
     "Permit Approved to Install 1",
@@ -666,9 +687,9 @@ export default function SpeedPipeline() {
   ];
 
   return (
-    <div className="p-4 space-y-4">
+    <div className="p-4 flex flex-col gap-4" style={{ height: "calc(100dvh - 64px)" }}>
       {/* Header */}
-      <div className="bg-white rounded-xl border border-slate-200/60 shadow-sm px-5 py-3.5">
+      <div className="shrink-0 bg-white rounded-xl border border-slate-200/60 shadow-sm px-5 py-3.5">
         <div className="flex items-center gap-3 mb-3">
           <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-cyan-500 to-cyan-700 flex items-center justify-center shadow-sm">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -779,8 +800,22 @@ export default function SpeedPipeline() {
         )}
       </div>
 
-      {/* Top tables side-by-side */}
-      <div className="grid grid-cols-[1fr_10px_1fr] gap-0 items-start">
+      {/* Collapsible summary & timeline */}
+      <div className="shrink-0 bg-white rounded-xl border border-slate-200/60 shadow-sm overflow-hidden">
+        <button
+          type="button"
+          className="w-full px-4 py-2.5 flex items-center justify-between hover:bg-slate-50 transition"
+          onClick={() => setChartsCollapsed(v => !v)}
+        >
+          <span className="text-sm font-semibold text-slate-700">Summary &amp; Timeline</span>
+          <span className="text-xs text-slate-400 flex items-center gap-1.5">
+            {chartsCollapsed ? "Show" : "Hide"}
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={`transition-transform ${chartsCollapsed ? "" : "rotate-180"}`}><polyline points="6 9 12 15 18 9" /></svg>
+          </span>
+        </button>
+      </div>
+      {!chartsCollapsed && (
+      <div className="shrink-0 grid grid-cols-[1fr_10px_1fr] gap-0 items-start">
         {/* LEFT: Summary */}
         <div className="bg-white rounded-xl border border-slate-200/60 shadow-sm overflow-hidden">
           <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between gap-3">
@@ -926,66 +961,66 @@ export default function SpeedPipeline() {
           <div className="px-4 py-2 text-[11px] text-slate-500 border-t border-slate-200">&nbsp;</div>
         </div>
       </div>
+      )}
 
       {/* Main sheet */}
-      <div className="bg-white rounded-xl border border-slate-200/60 shadow-sm overflow-hidden">
-        <div className="px-4 py-3 border-b border-slate-200">
+      <div className="flex-1 min-h-0 flex flex-col bg-white rounded-xl border border-slate-200/60 shadow-sm overflow-hidden">
+        <div className="shrink-0 px-4 py-3 border-b border-slate-200">
           <div className="text-sm font-semibold">Speed Data Sheet</div>
           <div className="text-[11px] text-slate-600">Dates are click-to-edit (modal); computed days update instantly.</div>
         </div>
 
-        <div className="overflow-x-auto overflow-y-auto max-h-[560px] thin-scroll">
-          <table className="min-w-[2200px] w-full text-xs table-fixed">
+        <div ref={sheetScrollRef} className="flex-1 min-h-0 overflow-x-auto overflow-y-auto thin-scroll">
+          <table className="min-w-[2460px] w-full text-xs table-fixed">
             <colgroup>
               <col style={{ width: "240px" }} />
               <col style={{ width: "120px" }} />
-              <col style={{ width: "90px" }} />
 
-              {/* 9 date columns (tight fit for YYYY-MM-DD) */}
-              {Array.from({ length: 9 }).map((_, i) => (
+              {/* 11 stage columns: 10 dates + Activated */}
+              {Array.from({ length: 11 }).map((_, i) => (
                 <col key={`stage-${i}`} style={{ width: "112px" }} />
               ))}
 
               <col style={{ width: "10px" }} />
 
-              {/* 8 sale->stage day columns (tight fit up to 5 digits) */}
-              {Array.from({ length: 8 }).map((_, i) => (
+              {/* 9 sale->stage day columns (tight fit up to 5 digits) */}
+              {Array.from({ length: 9 }).map((_, i) => (
                 <col key={`s2s-${i}`} style={{ width: "72px" }} />
               ))}
 
               <col style={{ width: "10px" }} />
 
-              {/* 8 stage->stage day columns */}
-              {Array.from({ length: 8 }).map((_, i) => (
+              {/* 9 stage->stage day columns */}
+              {Array.from({ length: 9 }).map((_, i) => (
                 <col key={`stg-${i}`} style={{ width: "72px" }} />
               ))}
             </colgroup>
 
             <thead>
               <tr>
-                <th className="group-head sticky top-0 z-30 bg-slate-50 border border-slate-200 text-center" colSpan={3}>
+                <th className="group-head sticky top-0 z-30 bg-slate-50 border border-slate-200 text-center" colSpan={2}>
                   <div className="group-title">Record</div>
                 </th>
 
-                <th className="group-head sticky top-0 z-30 bg-slate-50 border border-slate-200 text-center" colSpan={9}>
+                <th className="group-head sticky top-0 z-30 bg-slate-50 border border-slate-200 text-center" colSpan={11}>
                   <div className="group-title">Stages (Dates)</div>
                 </th>
 
                 <th className="divider-head sticky top-0 z-30" />
 
-                <th className="group-head sticky top-0 z-30 bg-indigo-50 border border-slate-200 text-center" colSpan={8}>
+                <th className="group-head sticky top-0 z-30 bg-indigo-50 border border-slate-200 text-center" colSpan={9}>
                   <div className="group-title">Sale → Stage (Days)</div>
                 </th>
 
                 <th className="divider-head sticky top-0 z-30" />
 
-                <th className="group-head sticky top-0 z-30 bg-emerald-50 border border-slate-200 text-center" colSpan={8}>
+                <th className="group-head sticky top-0 z-30 bg-emerald-50 border border-slate-200 text-center" colSpan={9}>
                   <div className="group-title">Stage → Stage (Days)</div>
                 </th>
               </tr>
 
               <tr>
-                {["Customer Name", "Status", "Activated"].map((h) => (
+                {["Customer Name", "Status"].map((h) => (
                   <th
                     key={h}
                     className="col-head sticky top-[32px] z-20 bg-slate-900 text-white border border-slate-200 text-center"
@@ -1030,13 +1065,13 @@ export default function SpeedPipeline() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td className="px-3 py-3" colSpan={3 + 9 + 1 + 8 + 1 + 8}>
+                  <td className="px-3 py-3" colSpan={2 + 11 + 1 + 9 + 1 + 9}>
                     Loading…
                   </td>
                 </tr>
               ) : display.length === 0 ? (
                 <tr>
-                  <td className="px-3 py-3" colSpan={3 + 9 + 1 + 8 + 1 + 8}>
+                  <td className="px-3 py-3" colSpan={2 + 11 + 1 + 9 + 1 + 9}>
                     No results.
                   </td>
                 </tr>
@@ -1046,11 +1081,11 @@ export default function SpeedPipeline() {
                   return (
                     <tr key={r.id} className="row-hover">
                       <td className="px-2 py-2 border border-slate-200 text-left">{r.customer_name ?? ""}</td>
-                      <td className="px-2 py-2 border border-slate-200 text-center">{r.status ?? ""}</td>
-                      <td className="px-2 py-2 border border-slate-200 text-center">{r.activated ?? ""}</td>
+                      <td className="px-2 py-2 border border-slate-200 text-center cursor-pointer hover:bg-slate-50" onClick={() => openEditor(r)}>{r.status ?? ""}</td>
 
                       <DateDisplayCell value={toISODateValue(r[COL.sale_date])} onClick={() => openEditor(r)} />
                       <DateDisplayCell value={toISODateValue(r[COL.site_survey])} onClick={() => openEditor(r)} />
+                      <DateDisplayCell value={toISODateValue(r[COL.design_submitted])} onClick={() => openEditor(r)} />
                       <DateDisplayCell value={toISODateValue(r[COL.design_ready])} onClick={() => openEditor(r)} />
                       <DateDisplayCell value={toISODateValue(r[COL.permit_submitted])} onClick={() => openEditor(r)} />
                       <DateDisplayCell value={toISODateValue(r[COL.permit_approved])} onClick={() => openEditor(r)} />
@@ -1058,10 +1093,12 @@ export default function SpeedPipeline() {
                       <DateDisplayCell value={toISODateValue(r[COL.install2])} onClick={() => openEditor(r)} />
                       <DateDisplayCell value={toISODateValue(r[COL.paid])} onClick={() => openEditor(r)} />
                       <DateDisplayCell value={toISODateValue(r[COL.pto])} onClick={() => openEditor(r)} />
+                      <td className="px-2 py-2 border border-slate-200 text-center cursor-pointer hover:bg-slate-50" onClick={() => openEditor(r)}>{r.activated ?? ""}</td>
 
                       <DividerCell />
 
                       <NumCell v={d.sale_to_ss} />
+                      <NumCell v={d.sale_to_design_submitted} />
                       <NumCell v={d.sale_to_design_ready} />
                       <NumCell v={d.sale_to_permit_submitted} />
                       <NumCell v={d.sale_to_permit_approved} />
@@ -1073,7 +1110,8 @@ export default function SpeedPipeline() {
                       <DividerCell />
 
                       <NumCell v={d.sale_to_ss} />
-                      <NumCell v={d.ss_to_design_ready} />
+                      <NumCell v={d.ss_to_design_submitted} />
+                      <NumCell v={d.design_submitted_to_design_ready} />
                       <NumCell v={d.design_ready_to_permit_submitted} />
                       <NumCell v={d.permit_submitted_to_permit_approved} />
                       <NumCell v={d.permit_approved_to_install1} />
@@ -1088,7 +1126,7 @@ export default function SpeedPipeline() {
           </table>
         </div>
 
-        <div className="px-4 py-2 text-[11px] text-slate-500 border-t border-slate-200">
+        <div className="shrink-0 px-4 py-2 text-[11px] text-slate-500 border-t border-slate-200">
           Divider columns clearly separate "Sale → Stage" vs "Stage → Stage".
         </div>
       </div>
@@ -1099,14 +1137,25 @@ export default function SpeedPipeline() {
           row={editingRow}
           values={editValues}
           setValues={setEditValues}
+          statusOptions={allStatuses}
           onCancel={() => setEditingRow(null)}
           onSave={async () => {
+            setMsg(null);
+            const scrollTop = sheetScrollRef.current?.scrollTop ?? 0;
+            const scrollLeft = sheetScrollRef.current?.scrollLeft ?? 0;
             for (const key in editValues) {
               const colKey = key as keyof typeof COL;
-              await updateField(editingRow.id, COL[colKey], editValues[key]);
+              const ok = await updateField(editingRow.id, COL[colKey], editValues[key]);
+              if (!ok) return;
             }
             setEditingRow(null);
-            load();
+            await load();
+            requestAnimationFrame(() => {
+              if (sheetScrollRef.current) {
+                sheetScrollRef.current.scrollTop = scrollTop;
+                sheetScrollRef.current.scrollLeft = scrollLeft;
+              }
+            });
           }}
         />
       )}
@@ -1194,38 +1243,62 @@ function EditModal({
   row,
   values,
   setValues,
+  statusOptions,
   onCancel,
   onSave,
 }: {
   row: DealRow;
   values: Record<string, string>;
   setValues: React.Dispatch<React.SetStateAction<Record<string, string>>>;
+  statusOptions: string[];
   onCancel: () => void;
   onSave: () => void;
 }) {
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
       <div className="bg-white rounded-xl shadow-2xl w-[600px] max-h-[90vh] overflow-y-auto p-6 space-y-4">
-        <div className="text-base font-semibold text-slate-900">Edit Dates – {row.customer_name}</div>
+        <div className="text-base font-semibold text-slate-900 border-b border-slate-200 pb-3">Edit – {row.customer_name}</div>
 
-        {Object.entries(values).map(([key, val]) => (
-          <div key={key} className="flex flex-col">
-            <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">{key.replaceAll("_", " ")}</label>
-            <input
-              type="date"
-              value={val}
-              onChange={(e) => setValues((prev) => ({ ...prev, [key]: e.target.value }))}
-              className="rounded-lg border border-slate-200/70 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-slate-200"
-            />
-          </div>
-        ))}
+        <div className="space-y-2.5">
+        {Object.entries(values).map(([key, val]) => {
+          const label = key === "status" ? "Status" : key === "activated" ? "Activated" : key.replaceAll("_", " ");
+          const inputCls = "flex-1 rounded-lg border border-slate-200/70 bg-white px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-slate-200";
+          if (key === "status") {
+            return (
+              <div key={key} className="flex items-center gap-3">
+                <label className="w-[140px] shrink-0 text-[11px] font-semibold text-slate-600 uppercase tracking-wider text-right">{label}</label>
+                <select value={val} onChange={(e) => setValues((prev) => ({ ...prev, [key]: e.target.value }))} className={inputCls}>
+                  <option value="">— Select —</option>
+                  {statusOptions.map((s) => (<option key={s} value={s}>{s}</option>))}
+                </select>
+              </div>
+            );
+          }
+          if (key === "activated") {
+            return (
+              <div key={key} className="flex items-center gap-3">
+                <label className="w-[140px] shrink-0 text-[11px] font-semibold text-slate-600 uppercase tracking-wider text-right">{label}</label>
+                <select value={val} onChange={(e) => setValues((prev) => ({ ...prev, [key]: e.target.value }))} className={inputCls}>
+                  <option value="">—</option>
+                  <option value="YES">YES</option>
+                </select>
+              </div>
+            );
+          }
+          return (
+            <div key={key} className="flex items-center gap-3">
+              <label className="w-[140px] shrink-0 text-[11px] font-semibold text-slate-600 uppercase tracking-wider text-right">{label}</label>
+              <input type="date" value={val} onChange={(e) => setValues((prev) => ({ ...prev, [key]: e.target.value }))} className={inputCls} />
+            </div>
+          );
+        })}
+        </div>
 
-        <div className="flex justify-end gap-3 pt-4">
-          <button className="px-3 py-2 rounded-lg border border-slate-200 text-sm bg-white hover:bg-slate-50 active:scale-[0.99] transition" onClick={onCancel}>
+        <div className="flex justify-end gap-3 pt-3 border-t border-slate-200">
+          <button className="px-4 py-2 rounded-lg border border-slate-200 text-sm bg-white hover:bg-slate-50 active:scale-[0.99] transition" onClick={onCancel}>
             Cancel
           </button>
-
-          <button className="px-3 py-2 rounded-lg bg-slate-900 text-white text-sm shadow-sm hover:bg-slate-800 active:scale-[0.99] transition" onClick={onSave}>
+          <button className="px-4 py-2 rounded-lg bg-slate-900 text-white text-sm shadow-sm hover:bg-slate-800 active:scale-[0.99] transition" onClick={onSave}>
             Save Changes
           </button>
         </div>
