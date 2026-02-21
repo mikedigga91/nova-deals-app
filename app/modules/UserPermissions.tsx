@@ -1,6 +1,7 @@
 "use client";
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import { useDeptPositions } from "@/lib/useDeptPositions";
 
 /* ═══════════════════ TYPES ═══════════════════ */
 
@@ -149,6 +150,15 @@ function UsersTab() {
   const [importing, setImporting] = useState(false);
   const [importProgress, setImportProgress] = useState<{ current: number; total: number } | null>(null);
   const [importResult, setImportResult] = useState<{ created: number; failed: { name: string; error: string }[] } | null>(null);
+  const [editingSnr, setEditingSnr] = useState<{ kind: "portal" | "orgonly"; id: string } | null>(null);
+  const [editingSnrData, setEditingSnrData] = useState<{ display_name: string; email: string; position: string; department: string }>({ display_name: "", email: "", position: "", department: "" });
+  const [deleteConfirm, setDeleteConfirm] = useState<{ kind: "portal"; user: PortalUser } | { kind: "orgonly"; emp: OrgEmployee } | null>(null);
+  const [savingInline, setSavingInline] = useState(false);
+  const [snrSort, setSnrSort] = useState<{ col: "name" | "email" | "position" | "department" | "source"; dir: "asc" | "desc" }>({ col: "name", dir: "asc" });
+  const [otherPosition, setOtherPosition] = useState("");
+  const [showManagePositions, setShowManagePositions] = useState(false);
+
+  const { departments: deptList, positionsByDept, addPosition, renamePosition, deletePosition, reload: reloadPositions } = useDeptPositions();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -166,6 +176,18 @@ function UsersTab() {
   }, []);
 
   const employeeMap = useMemo(() => new Map(allEmployees.map(e => [e.id, e])), [allEmployees]);
+
+  /** Write one row to audit_logs (non-blocking) */
+  const auditLog = useCallback(async (action: string, targetType: string, targetId: string | undefined, targetName: string, changes?: Record<string, any>) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const performedBy = session?.user?.email || "unknown";
+      await supabase.from("audit_logs").insert({
+        action, target_type: targetType, target_id: targetId || null,
+        target_name: targetName, changes: changes || null, performed_by: performedBy,
+      });
+    } catch { /* non-blocking — table may not exist yet */ }
+  }, []);
 
   // Employees that are active and not already linked to a portal user (available for linking)
   const availableEmployees = useMemo(() => {
@@ -254,8 +276,27 @@ function UsersTab() {
     return 10;
   }, []);
 
-  // Unified sorted SNR list: portal users + org-chart-only, sorted by position hierarchy
+  // Unified sorted SNR list: portal users + org-chart-only
   type SnrRow = { kind: "portal"; user: PortalUser; emp?: OrgEmployee } | { kind: "orgonly"; emp: OrgEmployee };
+
+  /** Extract a sortable string value from a row for a given column */
+  const snrSortVal = useCallback((row: SnrRow, col: typeof snrSort.col): string => {
+    const name = row.kind === "portal" ? row.user.display_name : row.emp.full_name;
+    const email = row.kind === "portal" ? row.user.email : (row.emp.email || "");
+    const pos = row.kind === "portal" ? (row.emp?.position || "") : row.emp.position;
+    const dept = row.kind === "portal" ? (row.emp?.department || "") : row.emp.department;
+    const src = row.kind === "portal"
+      ? (row.user.deactivation_source ?? "manual")
+      : "orgchart_only";
+    switch (col) {
+      case "name": return name;
+      case "email": return email;
+      case "position": return pos;
+      case "department": return dept;
+      case "source": return src;
+    }
+  }, []);
+
   const snrCombined = useMemo(() => {
     const rows: SnrRow[] = [
       ...snrUsers.map(u => ({
@@ -265,18 +306,22 @@ function UsersTab() {
       })),
       ...snrOrgOnly.map(e => ({ kind: "orgonly" as const, emp: e })),
     ];
+    const dir = snrSort.dir === "asc" ? 1 : -1;
     rows.sort((a, b) => {
-      const posA = a.kind === "portal" ? (a.emp?.position || "") : a.emp.position;
-      const posB = b.kind === "portal" ? (b.emp?.position || "") : b.emp.position;
-      const rA = positionRank(posA);
-      const rB = positionRank(posB);
-      if (rA !== rB) return rA - rB;
-      const nameA = a.kind === "portal" ? a.user.display_name : a.emp.full_name;
-      const nameB = b.kind === "portal" ? b.user.display_name : b.emp.full_name;
-      return nameA.localeCompare(nameB);
+      const vA = snrSortVal(a, snrSort.col).toLowerCase();
+      const vB = snrSortVal(b, snrSort.col).toLowerCase();
+      if (vA < vB) return -1 * dir;
+      if (vA > vB) return 1 * dir;
+      // Secondary sort by name when primary values are equal
+      if (snrSort.col !== "name") {
+        const nA = snrSortVal(a, "name").toLowerCase();
+        const nB = snrSortVal(b, "name").toLowerCase();
+        return nA.localeCompare(nB);
+      }
+      return 0;
     });
     return rows;
-  }, [snrUsers, snrOrgOnly, employeeMap, positionRank]);
+  }, [snrUsers, snrOrgOnly, employeeMap, snrSort, snrSortVal]);
 
   const totalSnrCount = snrCombined.length;
 
@@ -367,7 +412,9 @@ function UsersTab() {
   }
 
   async function deleteUser(id: string) {
+    const target = users.find(u => u.id === id);
     await supabase.from("portal_users").delete().eq("id", id);
+    if (target) await auditLog("user_deleted", "portal_user", id, target.display_name);
     setEditUser(null); load();
   }
 
@@ -394,6 +441,7 @@ function UsersTab() {
       }).eq("id", user.linked_employee_id);
     }
 
+    await auditLog("user_moved_to_snr", "portal_user", user.id, user.display_name);
     setEditUser(null);
     load();
   }
@@ -421,6 +469,8 @@ function UsersTab() {
       }).eq("id", pu.linked_employee_id);
     }
 
+    const target = users.find(u => u.id === id);
+    await auditLog("user_reinstated", "portal_user", id, target?.display_name || "Unknown");
     setEditUser(null);
     load();
   }
@@ -513,7 +563,129 @@ function UsersTab() {
     }
 
     const roleName = roleId ? roles.find(r => r.id === roleId)?.name : null;
+    await auditLog("employee_restored", "employee", emp.id, emp.full_name, { role: roleName || "none" });
     setMsg(`Restored ${emp.full_name} → Active user${roleName ? ` with role "${roleName}"` : " (no role matched — assign one manually)"}`);
+    load();
+  }
+
+  /** Inline‑edit save: persists name/email/position/department immediately */
+  async function saveInlineEdit() {
+    if (!editingSnr) return;
+    const { kind, id } = editingSnr;
+    const d = { ...editingSnrData };
+
+    // Handle "Other" position — resolve to typed value and persist to DB
+    if (d.position === "__other__") {
+      const custom = otherPosition.trim();
+      if (!custom) { setOtherPosition(""); return; }
+      d.position = custom;
+      // Persist new position to org_department_roles
+      if (d.department) await addPosition(d.department, custom);
+    }
+    setOtherPosition("");
+    setSavingInline(true);
+    setMsg(null);
+
+    try {
+      if (kind === "portal") {
+        const u = users.find(u => u.id === id);
+        const emp = u?.linked_employee_id ? employeeMap.get(u.linked_employee_id) : undefined;
+        if (!u) { setSavingInline(false); setEditingSnr(null); return; }
+
+        const changes: Record<string, { old: string; new: string }> = {};
+        // portal_users fields
+        if (d.display_name.trim() !== u.display_name) changes.display_name = { old: u.display_name, new: d.display_name.trim() };
+        if (d.email.trim() !== u.email) changes.email = { old: u.email, new: d.email.trim() };
+        // employee fields (position/department)
+        const oldPos = emp?.position || "";
+        const oldDept = emp?.department || "";
+        if (d.position.trim() !== oldPos) changes.position = { old: oldPos, new: d.position.trim() };
+        if (d.department.trim() !== oldDept) changes.department = { old: oldDept, new: d.department.trim() };
+
+        if (Object.keys(changes).length > 0) {
+          // Update portal_users if name or email changed
+          if (changes.display_name || changes.email) {
+            const { error } = await supabase.from("portal_users").update({ display_name: d.display_name.trim(), email: d.email.trim() }).eq("id", id);
+            if (error) { setMsg(`Save failed (portal_users): ${error.message}`); setSavingInline(false); return; }
+          }
+          // Update linked employee if position or department changed
+          if (changes.position || changes.department) {
+            let empId = u.linked_employee_id;
+
+            if (!empId) {
+              // Auto-link: find an existing employee by name
+              const match = allEmployees.find(e =>
+                e.full_name.toLowerCase() === d.display_name.trim().toLowerCase()
+              );
+              if (match) {
+                empId = match.id;
+              } else {
+                // Create a new employee record
+                const { data: newEmp, error: createErr } = await supabase.from("employees").insert({
+                  full_name: d.display_name.trim(),
+                  email: d.email.trim(),
+                  position: d.position.trim(),
+                  department: d.department.trim(),
+                  is_active: false,
+                }).select("id").single();
+                if (createErr) { setMsg(`Failed to create employee record: ${createErr.message}`); setSavingInline(false); return; }
+                empId = newEmp.id;
+              }
+              // Link the portal user to this employee
+              const { error: linkErr } = await supabase.from("portal_users").update({ linked_employee_id: empId }).eq("id", id);
+              if (linkErr) { setMsg(`Failed to link employee: ${linkErr.message}`); setSavingInline(false); return; }
+            }
+
+            const { error } = await supabase.from("employees").update({ position: d.position.trim(), department: d.department.trim() }).eq("id", empId);
+            if (error) { setMsg(`Save failed (employees): ${error.message}`); setSavingInline(false); return; }
+          }
+          await auditLog("user_edited", "portal_user", id, d.display_name.trim(), changes);
+        }
+      } else {
+        const emp = allEmployees.find(e => e.id === id);
+        if (!emp) { setSavingInline(false); setEditingSnr(null); return; }
+
+        const changes: Record<string, { old: string; new: string }> = {};
+        if (d.display_name.trim() !== emp.full_name) changes.full_name = { old: emp.full_name, new: d.display_name.trim() };
+        if (d.email.trim() !== (emp.email || "")) changes.email = { old: emp.email || "", new: d.email.trim() };
+        if (d.position.trim() !== (emp.position || "")) changes.position = { old: emp.position || "", new: d.position.trim() };
+        if (d.department.trim() !== (emp.department || "")) changes.department = { old: emp.department || "", new: d.department.trim() };
+
+        if (Object.keys(changes).length > 0) {
+          const { error } = await supabase.from("employees").update({
+            full_name: d.display_name.trim(), email: d.email.trim(),
+            position: d.position.trim(), department: d.department.trim(),
+          }).eq("id", id);
+          if (error) { setMsg(`Save failed: ${error.message}`); setSavingInline(false); return; }
+          await auditLog("employee_edited", "employee", id, d.display_name.trim(), changes);
+        }
+      }
+    } catch (e: any) {
+      setMsg(`Save error: ${e.message || "Unknown error"}`);
+      setSavingInline(false);
+      return;
+    }
+    setEditingSnr(null);
+    setSavingInline(false);
+    load();
+  }
+
+  /** Delete confirmed from the styled modal */
+  async function confirmDeleteSnr() {
+    if (!deleteConfirm) return;
+    if (deleteConfirm.kind === "portal") {
+      const u = deleteConfirm.user;
+      if (u.auth_uid) {
+        try { await adminAuthAction("ban", { portal_user_id: u.id }); } catch { /* non-blocking */ }
+      }
+      await supabase.from("portal_users").delete().eq("id", u.id);
+      await auditLog("user_deleted", "portal_user", u.id, u.display_name);
+    } else {
+      const emp = deleteConfirm.emp;
+      await supabase.from("employees").delete().eq("id", emp.id);
+      await auditLog("employee_deleted", "employee", emp.id, emp.full_name);
+    }
+    setDeleteConfirm(null);
     load();
   }
 
@@ -692,12 +864,28 @@ function UsersTab() {
       {/* ═══ SNR Users — Table View ═══ */}
       {userSubTab === "snr" && (
         <div className="space-y-3">
+          {msg && (
+            <div className="flex items-center justify-between bg-red-50 border border-red-200 rounded-lg px-4 py-2.5">
+              <span className="text-xs text-red-700">{msg}</span>
+              <button className="text-red-400 hover:text-red-600 text-sm font-bold ml-3" onClick={() => setMsg(null)}>✕</button>
+            </div>
+          )}
           <div className="flex items-center justify-between">
             <div className="text-xs text-slate-500 font-medium">
               {totalSnrCount} inactive{totalSnrCount !== 1 ? "" : ""}{" "}
               <span className="text-slate-400">({snrUsers.length} portal user{snrUsers.length !== 1 ? "s" : ""}, {snrOrgOnly.length} org chart only)</span>
             </div>
             <div className="flex items-center gap-2">
+              <button
+                className="px-3 py-1.5 rounded-lg border border-slate-200 text-[11px] font-semibold text-slate-600 bg-white hover:bg-slate-50 transition-colors flex items-center gap-1.5"
+                onClick={() => setShowManagePositions(true)}
+                title="Manage department positions"
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/>
+                </svg>
+                Manage Positions
+              </button>
               <input
                 className="border border-slate-200/70 rounded-lg px-3 py-1.5 text-xs w-64 focus:outline-none focus:ring-2 focus:ring-slate-200"
                 placeholder="Search SNR…"
@@ -713,11 +901,19 @@ function UsersTab() {
               <table className="w-full text-left">
                 <thead>
                   <tr className="bg-slate-50 text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
-                    <th className="px-4 py-2.5">Name</th>
-                    <th className="px-4 py-2.5">Email</th>
-                    <th className="px-4 py-2.5">Position</th>
-                    <th className="px-4 py-2.5">Department</th>
-                    <th className="px-4 py-2.5">Source</th>
+                    {([["name","Name"],["email","Email"],["department","Department"],["position","Position"],["source","Source"]] as const).map(([key, label]) => (
+                      <th key={key} className="px-4 py-2.5 cursor-pointer select-none hover:text-slate-700 transition-colors"
+                        onClick={() => setSnrSort(prev => prev.col === key ? { col: key, dir: prev.dir === "asc" ? "desc" : "asc" } : { col: key, dir: "asc" })}>
+                        <span className="inline-flex items-center gap-1">
+                          {label}
+                          {snrSort.col === key ? (
+                            <span className="text-slate-700">{snrSort.dir === "asc" ? "▲" : "▼"}</span>
+                          ) : (
+                            <span className="text-slate-300">▲</span>
+                          )}
+                        </span>
+                      </th>
+                    ))}
                     <th className="px-4 py-2.5 text-right">Actions</th>
                   </tr>
                 </thead>
@@ -727,6 +923,7 @@ function UsersTab() {
                       const u = row.user;
                       const role = getRoleForUser(u);
                       const linkedEmp = row.emp;
+                      const isEditing = editingSnr?.kind === "portal" && editingSnr.id === u.id;
                       const srcLabel =
                         u.deactivation_source === "orgchart_removed" ? "Org - Removed" :
                         u.deactivation_source === "orgchart_deactivated" ? "Org - Deactivated" :
@@ -734,82 +931,227 @@ function UsersTab() {
                         u.deactivation_source === "usermgmt_snr" ? "User Mgmt" :
                         u.deactivation_source ?? "Manual";
                       return (
-                        <tr key={u.id} className="hover:bg-slate-50 text-xs text-slate-700">
+                        <tr key={u.id} className={`text-xs text-slate-700 ${isEditing ? "bg-blue-50/50 ring-1 ring-blue-200" : "hover:bg-slate-50"}`}>
                           <td className="px-4 py-3">
-                            <div className="font-semibold text-slate-900">{u.display_name}</div>
-                            {role && <span className="text-[9px] bg-slate-800 text-white px-1.5 py-0.5 rounded font-semibold">{role.name}</span>}
+                            {isEditing ? (
+                              <input className="w-full border border-blue-300 rounded-lg px-2 py-1 text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-300 bg-white"
+                                value={editingSnrData.display_name} onChange={e => setEditingSnrData(d => ({ ...d, display_name: e.target.value }))}
+                                onKeyDown={e => { if (e.key === "Enter") saveInlineEdit(); if (e.key === "Escape") setEditingSnr(null); }}
+                                autoFocus />
+                            ) : (
+                              <>
+                                <div className="font-semibold text-slate-900">{u.display_name}</div>
+                                {role && <span className="text-[9px] bg-slate-800 text-white px-1.5 py-0.5 rounded font-semibold">{role.name}</span>}
+                              </>
+                            )}
                           </td>
-                          <td className="px-4 py-3 text-slate-500">{u.email}</td>
-                          <td className="px-4 py-3 text-slate-500">{linkedEmp?.position || "—"}</td>
-                          <td className="px-4 py-3 text-slate-500">{linkedEmp?.department || "—"}</td>
+                          <td className="px-4 py-3">
+                            {isEditing ? (
+                              <input className="w-full border border-blue-300 rounded-lg px-2 py-1 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-300 bg-white"
+                                value={editingSnrData.email} onChange={e => setEditingSnrData(d => ({ ...d, email: e.target.value }))}
+                                onKeyDown={e => { if (e.key === "Enter") saveInlineEdit(); if (e.key === "Escape") setEditingSnr(null); }} />
+                            ) : (
+                              <span className="text-slate-500">{u.email}</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3">
+                            {isEditing ? (
+                              <select className="w-full border border-blue-300 rounded-lg px-2 py-1 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-300 bg-white"
+                                value={editingSnrData.department}
+                                onChange={e => {
+                                  const newDept = e.target.value;
+                                  setEditingSnrData(d => {
+                                    if (d.department === newDept) return d;
+                                    return { ...d, department: newDept, position: "" };
+                                  });
+                                  setOtherPosition("");
+                                }}>
+                                <option value="">— Select —</option>
+                                {deptList.map(d => (
+                                  <option key={d} value={d}>{d}</option>
+                                ))}
+                                {editingSnrData.department && !deptList.includes(editingSnrData.department) && (
+                                  <option value={editingSnrData.department}>{editingSnrData.department}</option>
+                                )}
+                              </select>
+                            ) : (
+                              <span className="text-slate-500">{linkedEmp?.department || "—"}</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3">
+                            {isEditing ? (
+                              editingSnrData.position === "__other__" ? (
+                                <input className="w-full border border-blue-300 rounded-lg px-2 py-1 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-300 bg-white"
+                                  value={otherPosition} onChange={e => setOtherPosition(e.target.value)}
+                                  onKeyDown={e => { if (e.key === "Enter") saveInlineEdit(); if (e.key === "Escape") { setEditingSnrData(d => ({ ...d, position: "" })); setOtherPosition(""); } }}
+                                  placeholder="Type custom position…" autoFocus />
+                              ) : (
+                                <select className="w-full border border-blue-300 rounded-lg px-2 py-1 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-300 bg-white"
+                                  value={editingSnrData.position}
+                                  onChange={e => { setEditingSnrData(d => ({ ...d, position: e.target.value })); if (e.target.value === "__other__") setOtherPosition(""); }}>
+                                  <option value="">— Select —</option>
+                                  {(positionsByDept[editingSnrData.department] || []).map(p => (
+                                    <option key={p} value={p}>{p}</option>
+                                  ))}
+                                  {editingSnrData.position && !(positionsByDept[editingSnrData.department] || []).includes(editingSnrData.position) && (
+                                    <option value={editingSnrData.position}>{editingSnrData.position}</option>
+                                  )}
+                                  <option value="__other__">Other…</option>
+                                </select>
+                              )
+                            ) : (
+                              <span className="text-slate-500">{linkedEmp?.position || "—"}</span>
+                            )}
+                          </td>
                           <td className="px-4 py-3">
                             <span className="text-[9px] bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded font-semibold">{srcLabel}</span>
                           </td>
                           <td className="px-4 py-3 text-right">
                             <div className="flex items-center gap-1.5 justify-end">
-                              <button
-                                className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors"
-                                onClick={() => {
-                                  if (confirm(`Reinstate ${u.display_name}?\n\nThis will restore portal access.${u.linked_employee_id ? "\nTheir linked employee will also be reinstated in the Org Chart." : ""}`)) {
-                                    reinstateUser(u.id!);
-                                  }
-                                }}
-                              >Reinstate</button>
-                              <button
-                                className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 transition-colors"
-                                onClick={() => setEditUser({ ...u })}
-                              >Edit</button>
-                              <button
-                                className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 transition-colors"
-                                onClick={() => {
-                                  if (confirm(`Permanently delete ${u.display_name}?\n\nThis action cannot be undone.`)) {
-                                    deleteUser(u.id!);
-                                  }
-                                }}
-                              >Delete</button>
+                              {isEditing ? (
+                                <>
+                                  <button className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-blue-600 text-white border border-blue-600 hover:bg-blue-700 transition-colors disabled:opacity-50"
+                                    disabled={savingInline}
+                                    onClick={() => saveInlineEdit()}>
+                                    {savingInline ? "Saving…" : "Save"}
+                                  </button>
+                                  <button className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 transition-colors"
+                                    onClick={() => setEditingSnr(null)}>Cancel</button>
+                                </>
+                              ) : (
+                                <>
+                                  <button
+                                    className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors"
+                                    onClick={() => {
+                                      if (confirm(`Reinstate ${u.display_name}?\n\nThis will restore portal access.${u.linked_employee_id ? "\nTheir linked employee will also be reinstated in the Org Chart." : ""}`)) {
+                                        reinstateUser(u.id!);
+                                      }
+                                    }}
+                                  >Reinstate</button>
+                                  <button
+                                    className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 transition-colors"
+                                    onClick={() => { setEditingSnr({ kind: "portal", id: u.id! }); setEditingSnrData({ display_name: u.display_name, email: u.email, position: linkedEmp?.position || "", department: linkedEmp?.department || "" }); }}
+                                  >Edit</button>
+                                  <button
+                                    className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 transition-colors"
+                                    onClick={() => setDeleteConfirm({ kind: "portal", user: u })}
+                                  >Delete</button>
+                                </>
+                              )}
                             </div>
                           </td>
                         </tr>
                       );
                     } else {
                       const emp = row.emp;
+                      const isEditing = editingSnr?.kind === "orgonly" && editingSnr.id === emp.id;
                       return (
-                        <tr key={`org-${emp.id}`} className="hover:bg-slate-50 text-xs text-slate-700 bg-slate-50/40">
+                        <tr key={`org-${emp.id}`} className={`text-xs text-slate-700 ${isEditing ? "bg-blue-50/50 ring-1 ring-blue-200" : "hover:bg-slate-50 bg-slate-50/40"}`}>
                           <td className="px-4 py-3">
-                            <div className="font-semibold text-slate-900">{emp.full_name}</div>
+                            {isEditing ? (
+                              <input className="w-full border border-blue-300 rounded-lg px-2 py-1 text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-300 bg-white"
+                                value={editingSnrData.display_name} onChange={e => setEditingSnrData(d => ({ ...d, display_name: e.target.value }))}
+                                onKeyDown={e => { if (e.key === "Enter") saveInlineEdit(); if (e.key === "Escape") setEditingSnr(null); }}
+                                autoFocus />
+                            ) : (
+                              <div className="font-semibold text-slate-900">{emp.full_name}</div>
+                            )}
                           </td>
-                          <td className="px-4 py-3 text-slate-500">{emp.email || "—"}</td>
-                          <td className="px-4 py-3 text-slate-500">{emp.position || "—"}</td>
-                          <td className="px-4 py-3 text-slate-500">{emp.department || "—"}</td>
+                          <td className="px-4 py-3">
+                            {isEditing ? (
+                              <input className="w-full border border-blue-300 rounded-lg px-2 py-1 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-300 bg-white"
+                                value={editingSnrData.email} onChange={e => setEditingSnrData(d => ({ ...d, email: e.target.value }))}
+                                onKeyDown={e => { if (e.key === "Enter") saveInlineEdit(); if (e.key === "Escape") setEditingSnr(null); }} />
+                            ) : (
+                              <span className="text-slate-500">{emp.email || "—"}</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3">
+                            {isEditing ? (
+                              <select className="w-full border border-blue-300 rounded-lg px-2 py-1 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-300 bg-white"
+                                value={editingSnrData.department}
+                                onChange={e => {
+                                  const newDept = e.target.value;
+                                  setEditingSnrData(d => {
+                                    if (d.department === newDept) return d;
+                                    return { ...d, department: newDept, position: "" };
+                                  });
+                                  setOtherPosition("");
+                                }}>
+                                <option value="">— Select —</option>
+                                {deptList.map(d => (
+                                  <option key={d} value={d}>{d}</option>
+                                ))}
+                                {editingSnrData.department && !deptList.includes(editingSnrData.department) && (
+                                  <option value={editingSnrData.department}>{editingSnrData.department}</option>
+                                )}
+                              </select>
+                            ) : (
+                              <span className="text-slate-500">{emp.department || "—"}</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3">
+                            {isEditing ? (
+                              editingSnrData.position === "__other__" ? (
+                                <input className="w-full border border-blue-300 rounded-lg px-2 py-1 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-300 bg-white"
+                                  value={otherPosition} onChange={e => setOtherPosition(e.target.value)}
+                                  onKeyDown={e => { if (e.key === "Enter") saveInlineEdit(); if (e.key === "Escape") { setEditingSnrData(d => ({ ...d, position: "" })); setOtherPosition(""); } }}
+                                  placeholder="Type custom position…" autoFocus />
+                              ) : (
+                                <select className="w-full border border-blue-300 rounded-lg px-2 py-1 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-300 bg-white"
+                                  value={editingSnrData.position}
+                                  onChange={e => { setEditingSnrData(d => ({ ...d, position: e.target.value })); if (e.target.value === "__other__") setOtherPosition(""); }}>
+                                  <option value="">— Select —</option>
+                                  {(positionsByDept[editingSnrData.department] || []).map(p => (
+                                    <option key={p} value={p}>{p}</option>
+                                  ))}
+                                  {editingSnrData.position && !(positionsByDept[editingSnrData.department] || []).includes(editingSnrData.position) && (
+                                    <option value={editingSnrData.position}>{editingSnrData.position}</option>
+                                  )}
+                                  <option value="__other__">Other…</option>
+                                </select>
+                              )
+                            ) : (
+                              <span className="text-slate-500">{emp.position || "—"}</span>
+                            )}
+                          </td>
                           <td className="px-4 py-3">
                             <span className="text-[9px] bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded font-semibold">Org Chart Only</span>
                           </td>
                           <td className="px-4 py-3 text-right">
                             <div className="flex items-center gap-1.5 justify-end">
-                              <button
-                                className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors"
-                                onClick={() => {
-                                  const roleId = guessRoleForEmployee(emp);
-                                  const roleName = roleId ? roles.find(r => r.id === roleId)?.name : null;
-                                  if (confirm(`Restore ${emp.full_name}?\n\nThis will:\n• Reactivate them in the Org Chart\n• Create a portal user account\n• Auto-assign role: ${roleName || "None (assign manually)"}`)) {
-                                    restoreEmployee(emp);
-                                  }
-                                }}
-                              >Restore</button>
-                              <button
-                                className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 transition-colors"
-                                onClick={() => {
-                                  setNewUserPassword("");
-                                  setEditUser({
-                                    ...blankUser,
-                                    email: emp.email || "",
-                                    display_name: emp.full_name,
-                                    linked_employee_id: emp.id,
-                                    is_active: false,
-                                    deactivation_source: "orgchart_snr",
-                                  });
-                                }}
-                              >Create User</button>
+                              {isEditing ? (
+                                <>
+                                  <button className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-blue-600 text-white border border-blue-600 hover:bg-blue-700 transition-colors disabled:opacity-50"
+                                    disabled={savingInline}
+                                    onClick={() => saveInlineEdit()}>
+                                    {savingInline ? "Saving…" : "Save"}
+                                  </button>
+                                  <button className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 transition-colors"
+                                    onClick={() => setEditingSnr(null)}>Cancel</button>
+                                </>
+                              ) : (
+                                <>
+                                  <button
+                                    className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors"
+                                    onClick={() => {
+                                      const roleId = guessRoleForEmployee(emp);
+                                      const roleName = roleId ? roles.find(r => r.id === roleId)?.name : null;
+                                      if (confirm(`Restore ${emp.full_name}?\n\nThis will:\n• Reactivate them in the Org Chart\n• Create a portal user account\n• Auto-assign role: ${roleName || "None (assign manually)"}`)) {
+                                        restoreEmployee(emp);
+                                      }
+                                    }}
+                                  >Restore</button>
+                                  <button
+                                    className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 transition-colors"
+                                    onClick={() => { setEditingSnr({ kind: "orgonly", id: emp.id }); setEditingSnrData({ display_name: emp.full_name, email: emp.email || "", position: emp.position || "", department: emp.department || "" }); }}
+                                  >Edit</button>
+                                  <button
+                                    className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 transition-colors"
+                                    onClick={() => setDeleteConfirm({ kind: "orgonly", emp })}
+                                  >Delete</button>
+                                </>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -820,6 +1162,38 @@ function UsersTab() {
               </table>
             </div>
           )}
+        </div>
+      )}
+
+      {/* ═══ Delete Confirmation Modal ═══ */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setDeleteConfirm(null)}>
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm mx-4" onClick={ev => ev.stopPropagation()}>
+            <div className="px-5 pt-5 pb-2 text-center">
+              <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-red-100 flex items-center justify-center">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
+                  <line x1="10" y1="11" x2="10" y2="17" /><line x1="14" y1="11" x2="14" y2="17" />
+                </svg>
+              </div>
+              <h3 className="text-sm font-bold text-slate-900 mb-1">Delete {deleteConfirm.kind === "portal" ? "User" : "Employee"}</h3>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                Are you sure you want to permanently delete{" "}
+                <span className="font-semibold text-slate-700">
+                  {deleteConfirm.kind === "portal" ? deleteConfirm.user.display_name : deleteConfirm.emp.full_name}
+                </span>?
+              </p>
+              <p className="text-[11px] text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mt-3">
+                This action will permanently remove this {deleteConfirm.kind === "portal" ? "user" : "employee"} from the database and cannot be undone.
+              </p>
+            </div>
+            <div className="flex gap-2 px-5 py-4">
+              <button className="flex-1 px-4 py-2.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-colors"
+                onClick={() => setDeleteConfirm(null)}>Cancel</button>
+              <button className="flex-1 px-4 py-2.5 rounded-lg bg-red-600 text-white text-xs font-semibold hover:bg-red-700 transition-colors shadow-sm"
+                onClick={confirmDeleteSnr}>Yes, Delete</button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -934,6 +1308,18 @@ function UsersTab() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ═══ Manage Positions Modal ═══ */}
+      {showManagePositions && (
+        <ManagePositionsModal
+          departments={deptList}
+          positionsByDept={positionsByDept}
+          onAdd={async (dept, pos) => { await addPosition(dept, pos); await auditLog("position_added", "org_department_roles", undefined, pos, { department: dept }); }}
+          onRename={async (dept, oldN, newN) => { await renamePosition(dept, oldN, newN); await auditLog("position_renamed", "org_department_roles", undefined, newN, { department: dept, old_name: oldN }); }}
+          onDelete={async (dept, pos) => { await deletePosition(dept, pos); await auditLog("position_deleted", "org_department_roles", undefined, pos, { department: dept }); }}
+          onClose={() => { setShowManagePositions(false); reloadPositions(); }}
+        />
       )}
 
       {/* ═══ Edit/Create User Dialog ═══ */}
@@ -1369,6 +1755,170 @@ function RolesTab() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ═══════════════════ MANAGE POSITIONS MODAL ═══════════════════ */
+
+function ManagePositionsModal({
+  departments,
+  positionsByDept,
+  onAdd,
+  onRename,
+  onDelete,
+  onClose,
+}: {
+  departments: string[];
+  positionsByDept: Record<string, string[]>;
+  onAdd: (dept: string, pos: string) => Promise<void>;
+  onRename: (dept: string, oldName: string, newName: string) => Promise<void>;
+  onDelete: (dept: string, pos: string) => Promise<void>;
+  onClose: () => void;
+}) {
+  const [newPosInputs, setNewPosInputs] = useState<Record<string, string>>({});
+  const [editingPos, setEditingPos] = useState<{ dept: string; pos: string } | null>(null);
+  const [editValue, setEditValue] = useState("");
+  const [expandedDept, setExpandedDept] = useState<string | null>(departments[0] || null);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl mx-4 max-h-[85vh] flex flex-col" onClick={ev => ev.stopPropagation()}>
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 shrink-0">
+          <div>
+            <div className="text-sm font-semibold text-slate-900">Manage Positions</div>
+            <div className="text-[10px] text-slate-500 mt-0.5">Add, rename, or remove positions for each department</div>
+          </div>
+          <button className="text-slate-400 hover:text-slate-600 text-lg" onClick={onClose}>✕</button>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto px-5 py-3 space-y-1">
+          {departments.map(dept => {
+            const positions = positionsByDept[dept] || [];
+            const isExpanded = expandedDept === dept;
+            return (
+              <div key={dept} className="border border-slate-200 rounded-lg overflow-hidden">
+                {/* Department header */}
+                <button
+                  className="w-full flex items-center justify-between px-4 py-2.5 bg-slate-50 hover:bg-slate-100 transition-colors"
+                  onClick={() => setExpandedDept(isExpanded ? null : dept)}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-slate-700">{dept}</span>
+                    <span className="text-[9px] bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded-full font-semibold">{positions.length}</span>
+                  </div>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                    className={`text-slate-400 transition-transform ${isExpanded ? "rotate-180" : ""}`}>
+                    <polyline points="6 9 12 15 18 9" />
+                  </svg>
+                </button>
+
+                {isExpanded && (
+                  <div className="border-t border-slate-200">
+                    {positions.length === 0 ? (
+                      <div className="px-4 py-3 text-[11px] text-slate-400 italic">No positions defined</div>
+                    ) : (
+                      <div className="divide-y divide-slate-100">
+                        {positions.map(pos => {
+                          const isEditingThis = editingPos?.dept === dept && editingPos?.pos === pos;
+                          return (
+                            <div key={pos} className="flex items-center gap-2 px-4 py-2 hover:bg-slate-50 group">
+                              {isEditingThis ? (
+                                <>
+                                  <input
+                                    className="flex-1 border border-blue-300 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-300"
+                                    value={editValue}
+                                    onChange={e => setEditValue(e.target.value)}
+                                    onKeyDown={e => {
+                                      if (e.key === "Enter" && editValue.trim()) {
+                                        onRename(dept, pos, editValue.trim());
+                                        setEditingPos(null);
+                                      }
+                                      if (e.key === "Escape") setEditingPos(null);
+                                    }}
+                                    autoFocus
+                                  />
+                                  <button
+                                    className="px-2 py-1 text-[10px] font-semibold bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                                    onClick={() => { if (editValue.trim()) { onRename(dept, pos, editValue.trim()); setEditingPos(null); } }}
+                                  >Save</button>
+                                  <button
+                                    className="px-2 py-1 text-[10px] font-semibold text-slate-500 border border-slate-200 rounded-lg hover:bg-slate-50"
+                                    onClick={() => setEditingPos(null)}
+                                  >Cancel</button>
+                                </>
+                              ) : (
+                                <>
+                                  <span className="flex-1 text-xs text-slate-700">{pos}</span>
+                                  <button
+                                    className="px-2 py-1 text-[10px] font-semibold text-slate-400 hover:text-slate-700 opacity-0 group-hover:opacity-100 transition-opacity"
+                                    onClick={() => { setEditingPos({ dept, pos }); setEditValue(pos); }}
+                                    title="Rename"
+                                  >
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                      <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
+                                      <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
+                                    </svg>
+                                  </button>
+                                  <button
+                                    className="px-2 py-1 text-[10px] font-semibold text-slate-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                                    onClick={() => { if (confirm(`Delete position "${pos}" from ${dept}?`)) onDelete(dept, pos); }}
+                                    title="Delete"
+                                  >
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                      <polyline points="3 6 5 6 21 6" />
+                                      <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
+                                    </svg>
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* Add new position */}
+                    <div className="flex items-center gap-2 px-4 py-2.5 border-t border-slate-100 bg-slate-50/50">
+                      <input
+                        className="flex-1 border border-slate-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-slate-200"
+                        placeholder="New position name…"
+                        value={newPosInputs[dept] || ""}
+                        onChange={e => setNewPosInputs(prev => ({ ...prev, [dept]: e.target.value }))}
+                        onKeyDown={e => {
+                          if (e.key === "Enter" && (newPosInputs[dept] || "").trim()) {
+                            onAdd(dept, (newPosInputs[dept] || "").trim());
+                            setNewPosInputs(prev => ({ ...prev, [dept]: "" }));
+                          }
+                        }}
+                      />
+                      <button
+                        className="px-3 py-1 text-[10px] font-semibold bg-slate-900 text-white rounded-lg hover:bg-slate-800 disabled:opacity-40"
+                        disabled={!(newPosInputs[dept] || "").trim()}
+                        onClick={() => {
+                          const val = (newPosInputs[dept] || "").trim();
+                          if (!val) return;
+                          onAdd(dept, val);
+                          setNewPosInputs(prev => ({ ...prev, [dept]: "" }));
+                        }}
+                      >+ Add</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-end px-5 py-3 border-t border-slate-100 bg-slate-50 rounded-b-xl shrink-0">
+          <button className="px-5 py-2 rounded-lg bg-slate-900 text-white shadow-sm hover:bg-slate-800 text-xs font-semibold" onClick={onClose}>
+            Done
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
