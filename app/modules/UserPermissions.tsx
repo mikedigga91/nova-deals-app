@@ -91,6 +91,13 @@ async function adminAuthAction(action: string, payload: Record<string, any>) {
   return json;
 }
 
+function generateTempPassword(): string {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+  let pw = "";
+  for (let i = 0; i < 12; i++) pw += chars[Math.floor(Math.random() * chars.length)];
+  return pw;
+}
+
 /* ═══════════════════ MAIN COMPONENT ═══════════════════ */
 
 export default function UserPermissions() {
@@ -140,7 +147,7 @@ function UsersTab() {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [newUserPassword, setNewUserPassword] = useState("");
-  const [userSubTab, setUserSubTab] = useState<"active" | "snr">("active");
+  const [userSubTab, setUserSubTab] = useState<"active" | "snr" | "credentials">("active");
   const [snrSearch, setSnrSearch] = useState("");
   const [showImport, setShowImport] = useState(false);
   const [importMode, setImportMode] = useState<"active" | "snr">("active");
@@ -157,6 +164,11 @@ function UsersTab() {
   const [snrSort, setSnrSort] = useState<{ col: "name" | "email" | "position" | "department" | "source"; dir: "asc" | "desc" }>({ col: "name", dir: "asc" });
   const [otherPosition, setOtherPosition] = useState("");
   const [showManagePositions, setShowManagePositions] = useState(false);
+  const [resetModal, setResetModal] = useState<{ user: PortalUser } | null>(null);
+  const [resetTempPw, setResetTempPw] = useState("");
+  const [resetStep, setResetStep] = useState<"input" | "success">("input");
+  const [resetSaving, setResetSaving] = useState(false);
+  const [resetCopied, setResetCopied] = useState<"pw" | "link" | null>(null);
 
   const { departments: deptList, positionsByDept, addPosition, renamePosition, deletePosition, reload: reloadPositions } = useDeptPositions();
 
@@ -225,6 +237,7 @@ function UsersTab() {
   };
 
   const activeUsers = useMemo(() => users.filter(u => u.is_active), [users]);
+  const activeUsersWithAuth = useMemo(() => activeUsers.filter(u => u.auth_uid), [activeUsers]);
 
   /** Active users grouped by department, each group sorted by position then name */
   const activeUsersByDept = useMemo(() => {
@@ -475,17 +488,27 @@ function UsersTab() {
     load();
   }
 
-  async function resetPassword(portalUserId: string) {
-    const tempPw = prompt("Enter new temporary password (min 8 characters):");
-    if (!tempPw) return;
-    if (tempPw.length < 8) { setMsg("Password must be at least 8 characters."); return; }
+  function openResetModal(user: PortalUser) {
+    setResetTempPw(generateTempPassword());
+    setResetStep("input");
+    setResetSaving(false);
+    setResetCopied(null);
+    setResetModal({ user });
+  }
+
+  async function confirmResetPassword() {
+    if (!resetModal || !resetTempPw || resetTempPw.length < 8) return;
+    setResetSaving(true);
     try {
-      await adminAuthAction("reset-password", { portal_user_id: portalUserId, password: tempPw });
-      setMsg("Password reset successfully. User will be prompted to change it on next login.");
+      await adminAuthAction("reset-password", { portal_user_id: resetModal.user.id, password: resetTempPw });
+      await auditLog("password_reset", "portal_user", resetModal.user.id, resetModal.user.display_name);
+      setResetStep("success");
       load();
     } catch (e: any) {
       setMsg(`Reset failed: ${e.message}`);
+      setResetModal(null);
     }
+    setResetSaving(false);
   }
 
   /** Best-guess role based on department + position */
@@ -778,6 +801,15 @@ function UsersTab() {
               {totalSnrCount > 0 && (
                 <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold ${userSubTab === "snr" ? "bg-orange-100 text-orange-700" : "bg-slate-200 text-slate-600"}`}>
                   {totalSnrCount}
+                </span>
+              )}
+            </button>
+            <button onClick={() => setUserSubTab("credentials")}
+              className={`px-3.5 py-1.5 rounded-md text-[11px] font-semibold transition-colors flex items-center gap-1.5 ${userSubTab === "credentials" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
+              Credentials
+              {activeUsersWithAuth.length > 0 && (
+                <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold ${userSubTab === "credentials" ? "bg-blue-100 text-blue-700" : "bg-slate-200 text-slate-600"}`}>
+                  {activeUsersWithAuth.length}
                 </span>
               )}
             </button>
@@ -1184,6 +1216,64 @@ function UsersTab() {
         </div>
       )}
 
+      {/* ═══ Credentials — Table View ═══ */}
+      {userSubTab === "credentials" && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="text-xs text-slate-500 font-medium">
+              {activeUsersWithAuth.length} user{activeUsersWithAuth.length !== 1 ? "s" : ""} with authentication
+            </div>
+          </div>
+          {activeUsersWithAuth.length === 0 ? (
+            <div className="text-center py-12 text-slate-400 text-sm">No active users with authentication accounts.</div>
+          ) : (
+            <div className="border border-slate-200 rounded-xl overflow-hidden">
+              <table className="w-full text-left">
+                <thead>
+                  <tr className="bg-slate-50 text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
+                    <th className="px-4 py-2.5">Name</th>
+                    <th className="px-4 py-2.5">Email</th>
+                    <th className="px-4 py-2.5">Password</th>
+                    <th className="px-4 py-2.5">Status</th>
+                    <th className="px-4 py-2.5 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {activeUsersWithAuth.map(u => {
+                    const linkedEmp = u.linked_employee_id ? employeeMap.get(u.linked_employee_id) : undefined;
+                    return (
+                      <tr key={u.id} className="text-xs text-slate-700 hover:bg-slate-50">
+                        <td className="px-4 py-3">
+                          <div className="font-semibold text-slate-900">{u.display_name}</div>
+                          {linkedEmp && <div className="text-[9px] text-slate-400">{linkedEmp.position} · {linkedEmp.department}</div>}
+                        </td>
+                        <td className="px-4 py-3 text-slate-500">{u.email}</td>
+                        <td className="px-4 py-3">
+                          <span className="font-mono text-slate-400 tracking-wider select-none">••••••••</span>
+                        </td>
+                        <td className="px-4 py-3">
+                          {u.must_change_password ? (
+                            <span className="text-[9px] bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded font-semibold">PWD CHANGE PENDING</span>
+                          ) : (
+                            <span className="text-[9px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-semibold">AUTH ACTIVE</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <button
+                            className="px-3 py-1.5 rounded-lg text-[11px] font-semibold bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 transition-colors"
+                            onClick={() => openResetModal(u)}
+                          >Reset Password</button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ═══ Delete Confirmation Modal ═══ */}
       {deleteConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setDeleteConfirm(null)}>
@@ -1339,6 +1429,145 @@ function UsersTab() {
           onDelete={async (dept, pos) => { await deletePosition(dept, pos); await auditLog("position_deleted", "org_department_roles", undefined, pos, { department: dept }); }}
           onClose={() => { setShowManagePositions(false); reloadPositions(); }}
         />
+      )}
+
+      {/* ═══ Reset Password Modal ═══ */}
+      {resetModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => !resetSaving && setResetModal(null)}>
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4" onClick={ev => ev.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200">
+              <div className="text-sm font-semibold text-slate-900">
+                {resetStep === "success" ? "Password Reset Complete" : "Reset Password"}
+              </div>
+              <button className="text-slate-400 hover:text-slate-600 text-lg" onClick={() => !resetSaving && setResetModal(null)}>✕</button>
+            </div>
+
+            {resetStep === "input" ? (
+              <div className="px-5 py-4 space-y-4">
+                <div className="text-xs text-slate-500">
+                  Reset password for <span className="font-semibold text-slate-700">{resetModal.user.display_name}</span>
+                  <span className="text-slate-400 ml-1">({resetModal.user.email})</span>
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-medium text-slate-500 block mb-1">Temporary Password</label>
+                  <div className="flex gap-2">
+                    <div className="flex-1 relative">
+                      <input
+                        className="w-full border border-slate-200/70 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-slate-200 pr-10"
+                        value={resetTempPw}
+                        onChange={e => setResetTempPw(e.target.value)}
+                      />
+                      <button
+                        className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1 rounded text-slate-400 hover:text-slate-600 transition-colors"
+                        title="Copy password"
+                        onClick={() => { navigator.clipboard.writeText(resetTempPw); setResetCopied("pw"); setTimeout(() => setResetCopied(null), 2000); }}
+                        type="button"
+                      >
+                        {resetCopied === "pw" ? (
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="20 6 9 17 4 12" />
+                          </svg>
+                        ) : (
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                            <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
+                          </svg>
+                        )}
+                      </button>
+                    </div>
+                    <button
+                      className="px-3 py-2 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-colors whitespace-nowrap"
+                      onClick={() => setResetTempPw(generateTempPassword())}
+                      type="button"
+                    >Generate New</button>
+                  </div>
+                  {resetTempPw.length > 0 && resetTempPw.length < 8 && (
+                    <p className="text-[10px] text-red-500 mt-1">Password must be at least 8 characters</p>
+                  )}
+                </div>
+
+                <div className="flex gap-2 pt-2">
+                  <button
+                    className="flex-1 px-4 py-2.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-colors"
+                    onClick={() => setResetModal(null)}
+                    disabled={resetSaving}
+                  >Cancel</button>
+                  <button
+                    className="flex-1 px-4 py-2.5 rounded-lg bg-slate-900 text-white text-xs font-semibold hover:bg-slate-800 transition-colors shadow-sm disabled:opacity-50"
+                    onClick={confirmResetPassword}
+                    disabled={resetSaving || resetTempPw.length < 8}
+                  >{resetSaving ? "Resetting…" : "Confirm Reset"}</button>
+                </div>
+              </div>
+            ) : (
+              <div className="px-5 py-4 space-y-4">
+                <div className="flex items-center gap-2 text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2.5">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M22 11.08V12a10 10 0 11-5.93-9.14" />
+                    <polyline points="22 4 12 14.01 9 11.01" />
+                  </svg>
+                  <span className="text-xs font-semibold">Password reset successfully for {resetModal.user.display_name}</span>
+                </div>
+
+                <div>
+                  <div className="text-[10px] font-medium text-slate-500 mb-1">Temporary Password</div>
+                  <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                    <code className="flex-1 text-sm font-mono text-slate-700">{resetTempPw}</code>
+                    <button
+                      className="p-1 rounded text-slate-400 hover:text-slate-600 transition-colors"
+                      onClick={() => { navigator.clipboard.writeText(resetTempPw); setResetCopied("pw"); setTimeout(() => setResetCopied(null), 2000); }}
+                      type="button"
+                    >
+                      {resetCopied === "pw" ? (
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                      ) : (
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                          <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
+                        </svg>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <div className="text-[10px] font-medium text-slate-500 mb-1">Portal Login Link</div>
+                  <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                    <code className="flex-1 text-sm font-mono text-slate-700 truncate">{typeof window !== "undefined" ? window.location.origin : ""}</code>
+                    <button
+                      className="p-1 rounded text-slate-400 hover:text-slate-600 transition-colors"
+                      onClick={() => { navigator.clipboard.writeText(window.location.origin); setResetCopied("link"); setTimeout(() => setResetCopied(null), 2000); }}
+                      type="button"
+                    >
+                      {resetCopied === "link" ? (
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                      ) : (
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                          <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
+                        </svg>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="text-[10px] text-slate-400 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">
+                  The user will log in with the temporary password above. They will be automatically prompted to set a new password before accessing the portal.
+                </div>
+
+                <button
+                  className="w-full px-4 py-2.5 rounded-lg bg-slate-900 text-white text-xs font-semibold hover:bg-slate-800 transition-colors shadow-sm"
+                  onClick={() => setResetModal(null)}
+                >Done</button>
+              </div>
+            )}
+          </div>
+        </div>
       )}
 
       {/* ═══ Edit/Create User Dialog ═══ */}
@@ -1548,7 +1777,7 @@ function UsersTab() {
                         </div>
                         <button
                           className="px-3 py-1.5 text-[10px] font-semibold rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors"
-                          onClick={() => resetPassword(editUser.id!)}
+                          onClick={() => { setEditUser(null); openResetModal(editUser); }}
                           type="button"
                         >
                           Reset Password
