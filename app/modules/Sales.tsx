@@ -142,7 +142,7 @@ const SELECT_COLUMNS = [
   "paid_agent_post_p2_date","paid_agent_post_p2_amount",
   "p1_agent_reversal_date","p1_agent_reversal_amount","agent_fee_amount","agent_rev_after_fee_amount",
   "agent_net_price","only_agent_net_price_accounts",
-  "design_ready_date","permit_submitted_date","permit_approved_date",
+  "design_submitted_date","design_ready_date","permit_submitted_date","permit_approved_date",
   "install_1_racks_date","install_2_panel_landed_date","pto_date","paid_date",
   "first_name","last_name","phone_number","email_address",
   "street_address","city","postal_code","country",
@@ -1213,7 +1213,7 @@ export default function Sales() {
   const [paymentFilter, setPaymentFilter] = useState<"in_progress" | "partially_paid" | "fully_paid">("in_progress");
   const [hideFinancials, setHideFinancials] = useState(false);
   const [hideHold, setHideHold] = useState(false);
-  const [hideCancel, setHideCancel] = useState(false);
+  const [hideCancel, setHideCancel] = useState(true);
   const [stages, setStages] = useState<string[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const lastClickedIdx = useRef<number | null>(null);
