@@ -765,11 +765,11 @@ function ListSummaryBar({ stageStats, totals, milestoneAgg, trendPeriod, setTren
             </div>
           </div>
 
-          {/* ── Row 2: charts — same column sizing as Row 1 ── */}
+          {/* ── Row 2: charts — same column sizing as Row 1, with hover-enlarge ── */}
           <div className="grid gap-2" style={{ gridTemplateColumns: "0.6fr 1.2fr 1.2fr 1fr" }}>
 
-            {/* 1. Pipeline Funnel — Pie Chart (same width as Total Deals) */}
-            <div className="rounded-lg border border-[#EBEFF3] bg-white px-2.5 py-2 flex flex-col items-center">
+            {/* 1. Pipeline Funnel — Pie Chart */}
+            <div className="group/zoom relative rounded-lg border border-[#EBEFF3] bg-white px-2.5 py-2 flex flex-col items-center cursor-pointer">
               <div className="text-[9px] font-semibold text-[#6B7280] uppercase tracking-wider mb-1 self-start">Pipeline Funnel</div>
               <PieChart slices={countSlices} size={120} />
               <div className="w-full mt-1.5 flex flex-wrap justify-center gap-x-2 gap-y-0.5">
@@ -781,10 +781,26 @@ function ListSummaryBar({ stageStats, totals, milestoneAgg, trendPeriod, setTren
                   </div>
                 ))}
               </div>
+              {/* Hover enlarged */}
+              <div className="hidden group-hover/zoom:block absolute top-0 left-0 z-40 pointer-events-none">
+                <div className="bg-white rounded-xl border border-[#EBEFF3] shadow-2xl p-4 flex flex-col items-center" style={{ width: 340 }}>
+                  <div className="text-xs font-semibold text-[#6B7280] uppercase tracking-wider mb-2 self-start">Pipeline Funnel</div>
+                  <PieChart slices={countSlices} size={220} />
+                  <div className="w-full mt-3 flex flex-wrap justify-center gap-x-3 gap-y-1">
+                    {stageStats.filter(s => s.count > 0).map(s => (
+                      <div key={s.stage.key} className="flex items-center gap-1">
+                        <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: s.stage.dot }} />
+                        <span className="text-xs text-[#000000]">{s.stage.label}</span>
+                        <span className="text-xs font-bold text-[#000000]">{s.count}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
             </div>
 
-            {/* 2. Deals by Stage — Vertical Bar Graph (wider, matches Pipeline Value) */}
-            <div className="rounded-lg border border-[#EBEFF3] bg-white px-2.5 py-2">
+            {/* 2. Deals by Stage — Vertical Bar Graph */}
+            <div className="group/zoom relative rounded-lg border border-[#EBEFF3] bg-white px-2.5 py-2 cursor-pointer">
               <div className="text-[9px] font-semibold text-[#6B7280] uppercase tracking-wider mb-1">Deals by Stage</div>
               {(() => {
                 const maxC = Math.max(1, ...stageStats.map(s => s.count));
@@ -793,10 +809,7 @@ function ListSummaryBar({ stageStats, totals, milestoneAgg, trendPeriod, setTren
                     {stageStats.map(s => {
                       const h = s.count > 0 ? Math.max(4, (s.count / maxC) * 144) : 0;
                       return (
-                        <div key={s.stage.key} className="flex-1 flex flex-col items-center justify-end min-w-0 group relative overflow-hidden">
-                          <div className="absolute bottom-full mb-0.5 hidden group-hover:block z-10 pointer-events-none">
-                            <div className="bg-[#1F2937] text-white text-[8px] rounded px-1.5 py-0.5 whitespace-nowrap shadow-lg">{s.stage.label}: {s.count}</div>
-                          </div>
+                        <div key={s.stage.key} className="flex-1 flex flex-col items-center justify-end min-w-0 relative overflow-hidden">
                           {s.count > 0 && <span className="text-[7px] font-bold text-[#000000] tabular-nums mb-0.5 leading-none text-center w-full truncate">{s.count}</span>}
                           <div className="w-full rounded-t" style={{ height: h > 0 ? h : 2, backgroundColor: h > 0 ? s.stage.dot : "#E5E7EB", opacity: h > 0 ? 0.8 : 0.4 }} />
                         </div>
@@ -813,10 +826,40 @@ function ListSummaryBar({ stageStats, totals, milestoneAgg, trendPeriod, setTren
                   </div>
                 ))}
               </div>
+              {/* Hover enlarged */}
+              <div className="hidden group-hover/zoom:block absolute top-0 left-1/2 -translate-x-1/2 z-40 pointer-events-none">
+                <div className="bg-white rounded-xl border border-[#EBEFF3] shadow-2xl p-4" style={{ width: 520 }}>
+                  <div className="text-xs font-semibold text-[#6B7280] uppercase tracking-wider mb-2">Deals by Stage</div>
+                  {(() => {
+                    const maxC = Math.max(1, ...stageStats.map(s => s.count));
+                    return (
+                      <div className="flex items-end gap-1" style={{ height: 260 }}>
+                        {stageStats.map(s => {
+                          const h = s.count > 0 ? Math.max(6, (s.count / maxC) * 230) : 0;
+                          return (
+                            <div key={s.stage.key} className="flex-1 flex flex-col items-center justify-end min-w-0">
+                              {s.count > 0 && <span className="text-xs font-bold text-[#000000] tabular-nums mb-1">{s.count}</span>}
+                              <div className="w-full rounded-t" style={{ height: h > 0 ? h : 3, backgroundColor: h > 0 ? s.stage.dot : "#E5E7EB", opacity: h > 0 ? 0.85 : 0.4 }} />
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
+                  <div className="flex gap-0 mt-2">
+                    {stageStats.map(s => (
+                      <div key={s.stage.key} className="flex-1 min-w-0 flex flex-col items-center">
+                        <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: s.stage.dot }} />
+                        <span className="text-[9px] text-[#6B7280] text-center leading-tight mt-0.5 break-words w-full px-0.5">{s.stage.label}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
             </div>
 
             {/* 3. Value by Stage — Vertical Bar Graph */}
-            <div className="rounded-lg border border-[#EBEFF3] bg-white px-2.5 py-2">
+            <div className="group/zoom relative rounded-lg border border-[#EBEFF3] bg-white px-2.5 py-2 cursor-pointer">
               <div className="text-[9px] font-semibold text-[#6B7280] uppercase tracking-wider mb-1">Value by Stage</div>
               {(() => {
                 const maxV = Math.max(1, ...stageStats.map(s => s.value));
@@ -825,10 +868,7 @@ function ListSummaryBar({ stageStats, totals, milestoneAgg, trendPeriod, setTren
                     {stageStats.map(s => {
                       const h = s.value > 0 ? Math.max(4, (s.value / maxV) * 144) : 0;
                       return (
-                        <div key={s.stage.key} className="flex-1 flex flex-col items-center justify-end min-w-0 group relative overflow-hidden">
-                          <div className="absolute bottom-full mb-0.5 hidden group-hover:block z-10 pointer-events-none">
-                            <div className="bg-[#1F2937] text-white text-[8px] rounded px-1.5 py-0.5 whitespace-nowrap shadow-lg">{s.stage.label}: {money(s.value)}</div>
-                          </div>
+                        <div key={s.stage.key} className="flex-1 flex flex-col items-center justify-end min-w-0 relative overflow-hidden">
                           {s.value > 0 && <span className="text-[6px] font-bold text-[#000000] tabular-nums mb-0.5 leading-none text-center w-full truncate">{s.value >= 1000000 ? `$${(s.value / 1000000).toFixed(1)}M` : s.value >= 1000 ? `$${(s.value / 1000).toFixed(0)}K` : `$${s.value.toFixed(0)}`}</span>}
                           <div className="w-full rounded-t" style={{ height: h > 0 ? h : 2, backgroundColor: h > 0 ? s.stage.dot : "#E5E7EB", opacity: h > 0 ? 0.8 : 0.4 }} />
                         </div>
@@ -845,10 +885,40 @@ function ListSummaryBar({ stageStats, totals, milestoneAgg, trendPeriod, setTren
                   </div>
                 ))}
               </div>
+              {/* Hover enlarged */}
+              <div className="hidden group-hover/zoom:block absolute top-0 right-0 z-40 pointer-events-none">
+                <div className="bg-white rounded-xl border border-[#EBEFF3] shadow-2xl p-4" style={{ width: 520 }}>
+                  <div className="text-xs font-semibold text-[#6B7280] uppercase tracking-wider mb-2">Value by Stage</div>
+                  {(() => {
+                    const maxV = Math.max(1, ...stageStats.map(s => s.value));
+                    return (
+                      <div className="flex items-end gap-1" style={{ height: 260 }}>
+                        {stageStats.map(s => {
+                          const h = s.value > 0 ? Math.max(6, (s.value / maxV) * 230) : 0;
+                          return (
+                            <div key={s.stage.key} className="flex-1 flex flex-col items-center justify-end min-w-0">
+                              {s.value > 0 && <span className="text-[10px] font-bold text-[#000000] tabular-nums mb-1">{s.value >= 1000000 ? `$${(s.value / 1000000).toFixed(1)}M` : s.value >= 1000 ? `$${(s.value / 1000).toFixed(0)}K` : `$${s.value.toFixed(0)}`}</span>}
+                              <div className="w-full rounded-t" style={{ height: h > 0 ? h : 3, backgroundColor: h > 0 ? s.stage.dot : "#E5E7EB", opacity: h > 0 ? 0.85 : 0.4 }} />
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
+                  <div className="flex gap-0 mt-2">
+                    {stageStats.map(s => (
+                      <div key={s.stage.key} className="flex-1 min-w-0 flex flex-col items-center">
+                        <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: s.stage.dot }} />
+                        <span className="text-[9px] text-[#6B7280] text-center leading-tight mt-0.5 break-words w-full px-0.5">{s.stage.label}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
             </div>
 
             {/* 4. Milestone Completion */}
-            <div className="rounded-lg border border-[#EBEFF3] bg-white px-2.5 py-2">
+            <div className="group/zoom relative rounded-lg border border-[#EBEFF3] bg-white px-2.5 py-2 cursor-pointer">
               <div className="text-[9px] font-semibold text-[#6B7280] uppercase tracking-wider mb-1">Milestone Completion</div>
               <div className="space-y-1.5 pt-1">
                 {milestoneAgg.map(m => {
@@ -863,6 +933,27 @@ function ListSummaryBar({ stageStats, totals, milestoneAgg, trendPeriod, setTren
                     </div>
                   );
                 })}
+              </div>
+              {/* Hover enlarged */}
+              <div className="hidden group-hover/zoom:block absolute top-0 right-0 z-40 pointer-events-none">
+                <div className="bg-white rounded-xl border border-[#EBEFF3] shadow-2xl p-5" style={{ width: 400 }}>
+                  <div className="text-xs font-semibold text-[#6B7280] uppercase tracking-wider mb-3">Milestone Completion</div>
+                  <div className="space-y-2.5">
+                    {milestoneAgg.map(m => {
+                      const pct = m.total > 0 ? Math.round((m.done / m.total) * 100) : 0;
+                      return (
+                        <div key={m.key} className="flex items-center gap-2.5">
+                          <span className="text-xs text-[#000000] w-[90px] truncate flex-shrink-0">{m.label}</span>
+                          <div className="flex-1 h-5 rounded bg-[#F3F4F6] overflow-hidden relative">
+                            <div className={`h-full rounded transition-all ${progressBg(pct)}`} style={{ width: `${pct}%` }} />
+                            <span className="absolute inset-0 flex items-center justify-end pr-2 text-[11px] font-bold text-[#000000] tabular-nums">{pct}%</span>
+                          </div>
+                          <span className="text-[10px] text-[#6B7280] tabular-nums w-[52px] text-right flex-shrink-0">{m.done}/{m.total}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
             </div>
           </div>
